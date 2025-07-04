@@ -9,7 +9,7 @@ from app.dependencies import get_current_active_user
 
 router = APIRouter(prefix="/communications", tags=["communications"])
 
-@router.get("/", response_model=List[Communication])
+@router.get("", response_model=List[Communication])
 async def get_communications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -17,7 +17,7 @@ async def get_communications(
     service = CommunicationService(db)
     return service.get_communications()
 
-@router.post("/", response_model=Communication)
+@router.post("", response_model=Communication)
 async def create_communication(
     communication: CommunicationCreate,
     db: Session = Depends(get_db),
@@ -29,7 +29,7 @@ async def create_communication(
 @router.post("/{communication_id}/send", response_model=Communication)
 async def send_communication(
     communication_id: int,
-    tags: Optional[List[str]] = None,
+    tags: Optional[List[str]] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -41,8 +41,8 @@ async def send_communication(
 
 @router.post("/send-bulk", response_model=Communication)
 async def send_bulk_sms(
-    communication_id: int,
-    phone_numbers: List[str],
+    communication_id: int = Form(...),
+    phone_numbers: List[str] = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):

@@ -20,7 +20,8 @@ services:
   web:
     build: .
     command: >
-      sh -c "until pg_isready -h db -U user -d church_db; do echo waiting for database; sleep 2; done &&
+      sh -c "until pg_isready -h db -U user -d church_db; do echo waiting for database; sleep 5; done &&
+      python -m app.create_super_admin &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - .:/app
@@ -29,12 +30,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql://user:password@db/church_db
-      - SECRET_KEY=your-super-secret-key-here
-      - TWILIO_ACCOUNT_SID=your_twilio_account_sid
-      - TWILIO_AUTH_TOKEN=your_twilio_auth_token
-      - TWILIO_FROM_NUMBER=+27123456789
+    env_file:
+      - .env
 
 volumes:
   postgres_data:

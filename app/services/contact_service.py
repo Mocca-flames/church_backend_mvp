@@ -16,7 +16,18 @@ class ContactService:
     
     def create_contact(self, contact: ContactCreate) -> Contact:
         """Create a new contact"""
-        db_contact = Contact(**contact.dict())
+        # Clean and validate phone number
+        phone = str(contact.phone).strip()
+        if not phone.startswith('+'):
+            phone = '+27' + phone.lstrip('0')  # Assume South African format for numbers without country code
+
+        # Validate phone number length for South African numbers
+        if phone.startswith('+27') and len(phone) != 12:
+            raise ValueError(f"Invalid phone number: '{phone}'. South African numbers must have 12 characters (e.g., +27123456789).")
+
+        contact.phone = phone
+        
+        db_contact = Contact(**contact.model_dump())
         self.db.add(db_contact)
         self.db.commit()
         self.db.refresh(db_contact)
@@ -46,7 +57,7 @@ class ContactService:
             df = pd.read_csv(io.StringIO(csv_content))
             
             # Validate required columns
-            required_columns = ['full_name', 'phone']
+            required_columns = ['name', 'phone']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 return {
@@ -61,22 +72,9 @@ class ContactService:
             
             for index, row in df.iterrows():
                 try:
-                    # Clean phone number
-                    phone = str(row['phone']).strip()
-                    if not phone.startswith('+'):
-                        phone = '+27' + phone.lstrip('0')  # South African format
-                    
-                    # Parse tags if present
-                    tags = []
-                    if 'tags' in row and pd.notna(row['tags']):
-                        tags = [tag.strip() for tag in str(row['tags']).split(',')]
-                    
                     contact_data = ContactCreate(
-                        full_name=str(row['full_name']).strip(),
-                        phone=phone,
-                        tags=tags,
-                        opt_out_sms=bool(row.get('opt_out_sms', False)),
-                        opt_out_whatsapp=bool(row.get('opt_out_whatsapp', False))
+                        name=str(row['name']).strip(),
+                        phone=str(row['phone']).strip()
                     )
                     
                     self.create_contact(contact_data)
@@ -85,6 +83,10 @@ class ContactService:
                 except IntegrityError:
                     failed_count += 1
                     errors.append(f"Row {index + 1}: Phone number already exists")
+                    self.db.rollback()
+                except ValueError as e:
+                    failed_count += 1
+                    errors.append(f"Row {index + 1}: {str(e)}")
                     self.db.rollback()
                 except Exception as e:
                     failed_count += 1
@@ -114,36 +116,59 @@ class ContactService:
 
             for vcard in vobject.readComponents(vcf_content):
                 try:
-                    full_name = vcard.fn.value
-                    phone = None
-                    if hasattr(vcard, 'tel'):
-                        phone = vcard.tel.value
-                    
-                    if not phone:
+                    # Phone number is essential, check for it first.
+                    if not hasattr(vcard, 'tel_list') or not vcard.tel_list:
+                        try:
+                            name_for_error = vcard.fn.value
+                        except Exception:
+                            name_for_error = "an unknown contact"
                         failed_count += 1
-                        errors.append(f"Card for {full_name} is missing a phone number.")
+                        errors.append(f"Card for {name_for_error} is missing a phone number.")
                         continue
 
-                    # Clean phone number
-                    phone = str(phone).strip()
-                    if not phone.startswith('+'):
-                        phone = '+27' + phone.lstrip('0')  # South African format
+                    # Try to get the name, but don't fail the whole card if it's missing/malformed.
+                    try:
+                        name = vcard.fn.value
+                    except Exception:
+                        name = None
 
-                    contact_data = ContactCreate(
-                        full_name=full_name,
-                        phone=phone,
-                    )
-                    
-                    self.create_contact(contact_data)
-                    imported_count += 1
+                    for tel in vcard.tel_list:
+                        phone = None
+                        try:
+                            phone = tel.value
+                            
+                            # If name was not found, use the phone number as the name.
+                            contact_name = name if name else str(phone)
 
-                except IntegrityError:
-                    failed_count += 1
-                    errors.append(f"Contact with phone number {phone} already exists.")
-                    self.db.rollback()
+                            contact_data = ContactCreate(
+                                name=contact_name,
+                                phone=str(phone).strip()
+                            )
+                            
+                            self.create_contact(contact_data)
+                            imported_count += 1
+                        
+                        except IntegrityError:
+                            failed_count += 1
+                            errors.append(f"Contact with phone number {phone} already exists.")
+                            self.db.rollback()
+                        except ValueError as e:
+                            failed_count += 1
+                            errors.append(f"Error processing phone number {phone} for '{name or 'Unknown'}': {str(e)}")
+                            self.db.rollback()
+                        except Exception as e:
+                            failed_count += 1
+                            errors.append(f"Error processing phone number {phone} for '{name or 'Unknown'}': {str(e)}")
+                            self.db.rollback()
+
                 except Exception as e:
                     failed_count += 1
-                    errors.append(f"Error processing VCard: {str(e)}")
+                    # Try to get a name for the error message
+                    try:
+                        name_for_error = vcard.fn.value
+                    except Exception:
+                        name_for_error = "Unknown"
+                    errors.append(f"Error processing VCard for {name_for_error}: {str(e)}")
                     self.db.rollback()
 
             return {

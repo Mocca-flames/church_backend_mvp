@@ -12,7 +12,7 @@ class UserCreate(UserBase):
     password: str
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: EmailStr
     password: str
 
 class User(UserBase):
@@ -24,14 +24,17 @@ class User(UserBase):
 
 # Contact Schemas
 class ContactBase(BaseModel):
-    full_name: str
+    name: str
     phone: str
-    tags: Optional[List[str]] = []
     opt_out_sms: bool = False
     opt_out_whatsapp: bool = False
 
-class ContactCreate(ContactBase):
-    pass
+class ContactCreate(BaseModel):
+    name: str
+    phone: str
+
+class ContactImport(BaseModel):
+    contacts: List[ContactCreate]
 
 class Contact(ContactBase):
     id: int
@@ -40,8 +43,6 @@ class Contact(ContactBase):
     class Config:
         from_attributes = True
 
-class ContactImport(BaseModel):
-    contacts: List[ContactCreate]
 
 # Communication Schemas
 class CommunicationBase(BaseModel):

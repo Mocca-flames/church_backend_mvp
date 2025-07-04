@@ -34,7 +34,7 @@ Registers a new user.
 {
   "email": "user@example.com",
   "password": "your_password",
-  "role": "user",
+  "role": "super_admin",
   "is_active": true
 }
 ```
@@ -99,13 +99,19 @@ The updated communication object.
 
 Sends a communication to a list of phone numbers.
 
-**Request Body:**
+**Request Body (form-data):**
 
-```json
-{
-  "communication_id": 1,
-  "phone_numbers": ["+1234567890", "+0987654321"]
-}
+- `communication_id`: The ID of the communication to send.
+- `phone_numbers`: A list of phone numbers to send the message to. This parameter should be repeated for each phone number.
+
+**Example using `curl`:**
+
+```bash
+curl -X POST "http://your-api-url/communications/send-bulk" \
+-H "Authorization: Bearer your_access_token" \
+-F "communication_id=1" \
+-F "phone_numbers=+1234567890" \
+-F "phone_numbers=+0987654321"
 ```
 
 **Response:**
@@ -147,11 +153,8 @@ Creates a new contact.
 
 ```json
 {
-  "first_name": "John",
-  "last_name": "Doe",
-  "email": "john.doe@example.com",
-  "phone_number": "+1234567890",
-  "tags": ["member", "volunteer"]
+  "name": "John Doe",
+  "phone": "+1234567890"
 }
 ```
 
@@ -169,10 +172,17 @@ Imports contacts from a CSV or VCF file.
 
 **Response:**
 
+A summary of the import process.
+
 ```json
 {
   "success": true,
-  "message": "Contacts imported successfully"
+  "imported_count": 50,
+  "failed_count": 2,
+  "errors": [
+    "Row 3: Phone number already exists",
+    "Row 12: Card for Jane Doe is missing a phone number."
+  ]
 }
 ```
 

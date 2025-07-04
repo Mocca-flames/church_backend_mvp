@@ -25,18 +25,25 @@ class CommunicationService:
         return db_communication
     
     def get_recipients(self, recipient_group: str, tags: Optional[List[str]] = None) -> List[Contact]:
-        """Get recipient contacts based on group type"""
+        """
+        Get recipient contacts based on group type.
+        Valid recipient_group values are 'all_contacts' and 'tagged'.
+        """
         query = self.db.query(Contact)
         
         if recipient_group == "all_contacts":
             query = query.filter(Contact.opt_out_sms == False)
-        elif recipient_group == "tagged" and tags:
+        elif recipient_group == "tagged":
+            if not tags:
+                raise ValueError("Tags must be provided for 'tagged' recipient group")
             query = query.filter(
                 and_(
                     Contact.tags.overlap(tags),
                     Contact.opt_out_sms == False
                 )
             )
+        else:
+            raise ValueError("Invalid recipient_group. Must be 'all_contacts' or 'tagged'.")
         
         return query.all()
     

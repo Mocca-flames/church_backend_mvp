@@ -19,9 +19,8 @@ class Contact(Base):
     __tablename__ = "contacts"
     
     id = Column(Integer, primary_key=True, index=True)
-    full_name = Column(String(200), nullable=False)
+    name = Column(String(200), nullable=False)
     phone = Column(String(20), unique=True, nullable=False, index=True)
-    tags = Column(ARRAY(String), default=[])
     opt_out_sms = Column(Boolean, default=False)
     opt_out_whatsapp = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
