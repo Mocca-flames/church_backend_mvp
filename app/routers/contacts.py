@@ -15,7 +15,7 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 @router.get("", response_model=List[Contact])
 async def get_contacts(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -99,10 +99,24 @@ async def import_contacts(
     service = ContactService(db)
     
     imported_count = 0
+    skipped_count = 0
     errors = []
     
     for contact_data in contact_import.contacts:
+        phone = str(contact_data.phone).strip()
+        
+        # Clean phone number for checking duplicates
+        cleaned_phone = phone
+        if not cleaned_phone.startswith('+'):
+            cleaned_phone = '+27' + cleaned_phone.lstrip('0')
+
+        # Check if contact already exists with the cleaned phone number
+        if service.get_contact_by_phone(cleaned_phone):
+            skipped_count += 1
+            continue
+            
         try:
+            # The service will handle its own cleaning and validation
             service.create_contact(contact_data)
             imported_count += 1
             
@@ -111,20 +125,46 @@ async def import_contacts(
                 'contact': contact_data.name or 'Unnamed',
                 'error': str(e)
             })
+            skipped_count += 1
             
     result = {
         'success': True,
         'imported_count': imported_count,
+        'skipped_count': skipped_count,
         'total_contacts': len(contact_import.contacts),
         'errors': errors
     }
     
     if errors:
-        result['message'] = f"Imported {imported_count} contacts with {len(errors)} errors"
+        result['message'] = f"Imported {imported_count} contacts, skipped {skipped_count} due to errors or duplicates."
     else:
-        result['message'] = f"Successfully imported {imported_count} contacts"
+        result['message'] = f"Successfully imported {imported_count} contacts. Skipped {skipped_count} duplicates."
         
     return result
+
+@router.delete("/mass-delete")
+async def mass_delete_contacts(
+    contact_ids: List[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    service = ContactService(db)
+    deleted_count = 0
+    failed_deletions = []
+
+    for contact_id in contact_ids:
+        if service.delete_contact(contact_id):
+            deleted_count += 1
+        else:
+            failed_deletions.append(contact_id)
+    
+    if failed_deletions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Successfully deleted {deleted_count} contacts. Failed to delete contacts with IDs: {failed_deletions}"
+        )
+    else:
+        return {"message": f"Successfully deleted {deleted_count} contacts."}
 
 @router.delete("/{contact_id}")
 async def delete_contact(
