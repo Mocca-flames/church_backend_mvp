@@ -1,11 +1,14 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from app.models import Communication, Contact
-from app.schemas import CommunicationCreate
+from app.schema.communication import CommunicationCreate, CommunicationUpdate
 from app.services.sms_service import sms_service
 from datetime import datetime
 from typing import List, Optional
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +19,12 @@ class CommunicationService:
     def create_communication(self, communication: CommunicationCreate, user_id: int) -> Communication:
         """Create a new communication record"""
         db_communication = Communication(
-            **communication.dict(),
+            message_type=communication.message_type,
+            recipient_group=communication.recipient_group,
+            subject=communication.subject,
+            message=communication.message,
+            scheduled_at=communication.scheduled_at,
+            metadata_=communication.metadata_,
             created_by=user_id
         )
         self.db.add(db_communication)
@@ -24,6 +32,22 @@ class CommunicationService:
         self.db.refresh(db_communication)
         return db_communication
     
+    def update_communication(self, communication_id: int, communication_update: CommunicationUpdate) -> Optional[Communication]:
+        """Update an existing communication"""
+        db_communication = self.db.query(Communication).filter(Communication.id == communication_id).first()
+        if not db_communication:
+            return None
+        
+        update_data = communication_update.model_dump(exclude_unset=True)
+        
+        for key, value in update_data.items():
+            setattr(db_communication, key, value)
+        
+        self.db.add(db_communication)
+        self.db.commit()
+        self.db.refresh(db_communication)
+        return db_communication
+
     def get_recipients(self, recipient_group: str, tags: Optional[List[str]] = None) -> List[Contact]:
         """
         Get recipient contacts based on group type.

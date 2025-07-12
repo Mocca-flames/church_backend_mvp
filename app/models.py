@@ -21,8 +21,11 @@ class Contact(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
     phone = Column(String(20), unique=True, nullable=False, index=True)
+    status = Column(String(50), default='active') # e.g., 'active', 'inactive', 'lead', 'customer'
+    tags = Column(ARRAY(String), default=[]) # For flexible grouping
     opt_out_sms = Column(Boolean, default=False)
     opt_out_whatsapp = Column(Boolean, default=False)
+    metadata_ = Column(Text) # Store JSON string for flexible data
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Communication(Base):
@@ -38,6 +41,7 @@ class Communication(Base):
     status = Column(String(20), default='draft')  # 'draft', 'scheduled', 'sent', 'failed'
     sent_count = Column(Integer, default=0)
     failed_count = Column(Integer, default=0)
+    metadata_ = Column(Text) # Store JSON string for flexible data
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     

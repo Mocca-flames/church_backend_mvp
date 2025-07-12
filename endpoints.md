@@ -69,15 +69,39 @@ Creates a new communication.
 
 ```json
 {
+  "message_type": "sms",
+  "recipient_group": "all_contacts",
   "subject": "Sunday Service Reminder",
   "message": "Join us for service this Sunday at 10 AM. We look forward to seeing you!",
-  "type": "sms"
+  "scheduled_at": "2025-07-15T10:00:00Z",
+  "metadata_": "{\"campaign\": \"summer_promo\"}"
 }
 ```
 
 **Response:**
 
 The newly created communication object.
+
+### `PUT /communications/{communication_id}`
+
+Updates an existing communication.
+
+**Path Parameters:**
+
+- `communication_id`: The ID of the communication to update.
+
+**Request Body:**
+
+```json
+{
+  "message_type": "whatsapp",
+  "message": "Updated message for WhatsApp campaign."
+}
+```
+
+**Response:**
+
+The updated communication object.
 
 ### `POST /communications/{communication_id}/send`
 
@@ -140,6 +164,9 @@ Returns a list of all contacts.
 
 - `skip`: The number of contacts to skip.
 - `limit`: The maximum number of contacts to return.
+- `search`: Optional. Search term for name or phone.
+- `status`: Optional. Filter by contact status (e.g., 'active', 'inactive', 'lead', 'customer').
+- `tag`: Optional. Filter by a specific tag.
 
 **Response:**
 
@@ -154,13 +181,40 @@ Creates a new contact.
 ```json
 {
   "name": "John Doe",
-  "phone": "+1234567890"
+  "phone": "+1234567890",
+  "status": "active",
+  "tags": ["family", "church_member"],
+  "opt_out_sms": false,
+  "opt_out_whatsapp": false,
+  "metadata_": "{\"source\": \"website_signup\"}"
 }
 ```
 
 **Response:**
 
 The newly created contact object.
+
+### `PUT /contacts/{contact_id}`
+
+Updates an existing contact.
+
+**Path Parameters:**
+
+- `contact_id`: The ID of the contact to update.
+
+**Request Body:**
+
+```json
+{
+  "name": "Jane Doe",
+  "status": "inactive",
+  "opt_out_sms": true
+}
+```
+
+**Response:**
+
+The updated contact object.
 
 ### `POST /contacts/import`
 
@@ -186,6 +240,24 @@ A summary of the import process.
 }
 ```
 
+### `DELETE /contacts/mass-delete`
+
+Deletes multiple contacts by their IDs.
+
+**Request Body:**
+
+```json
+[1, 2, 3]
+```
+
+**Response:**
+
+```json
+{
+  "message": "Successfully deleted X contacts."
+}
+```
+
 ### `DELETE /contacts/{contact_id}`
 
 Deletes a contact.
@@ -200,3 +272,32 @@ Deletes a contact.
 {
   "message": "Contact deleted successfully"
 }
+```
+
+### `GET /contacts/export/csv`
+
+Exports contacts to CSV format.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "csv_content": "name,phone,status,tags,opt_out_sms,opt_out_whatsapp,metadata_\nJohn Doe,+1234567890,active,\"family,church_member\",false,false,\n",
+  "filename": "contacts_export.csv"
+}
+```
+
+### `GET /contacts/export/vcf`
+
+Exports contacts to VCF format.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "vcf_content": "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nTEL;TYPE=CELL:+1234567890\nEND:VCARD\n",
+  "filename": "contacts_export.vcf"
+}
+```

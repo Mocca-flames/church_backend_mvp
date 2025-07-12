@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
 from app.models import User, Communication
-from app.schemas import Communication as CommunicationSchema, CommunicationCreate
+from app.schema.communication import Communication as CommunicationSchema, CommunicationCreate, CommunicationUpdate
 from app.services.communication_service import CommunicationService
 from app.dependencies import get_current_active_user
 
@@ -25,6 +25,19 @@ async def create_communication(
 ):
     service = CommunicationService(db)
     return service.create_communication(communication, current_user.id)
+
+@router.put("/{communication_id}", response_model=CommunicationSchema)
+async def update_communication(
+    communication_id: int,
+    communication_update: CommunicationUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    service = CommunicationService(db)
+    updated_comm = service.update_communication(communication_id, communication_update)
+    if not updated_comm:
+        raise HTTPException(status_code=404, detail="Communication not found")
+    return updated_comm
 
 @router.post("/{communication_id}/send", response_model=CommunicationSchema)
 async def send_communication(

@@ -6,7 +6,7 @@ import io
 import re
 from app.database import get_db
 from app.models import User
-from app.schemas import Contact, ContactCreate, ContactImport
+from app.schema.contact import Contact, ContactCreate, ContactUpdate, ContactImport
 from app.services.contact_service import ContactService
 from app.dependencies import get_current_active_user
 
@@ -34,6 +34,19 @@ async def create_contact(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.put("/{contact_id}", response_model=Contact)
+async def update_contact(
+    contact_id: int,
+    contact: ContactUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    service = ContactService(db)
+    updated_contact = service.update_contact(contact_id, contact)
+    if not updated_contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return updated_contact
+
 def parse_csv_contacts(csv_content: str) -> List[dict]:
     """Parse CSV content and extract contact information"""
     contacts = []
@@ -55,8 +68,11 @@ def parse_csv_contacts(csv_content: str) -> List[dict]:
             continue
             
         contact_data = {
-            'display_name': display_name,
-            'mobile_phone': mobile_phone,
+            'name': display_name,
+            'phone': mobile_phone,
+            'status': row.get('Status', 'active').strip(),
+            'tags': [tag.strip() for tag in row.get('Tags', '').split(',') if tag.strip()],
+            'metadata_': row.get('Metadata', '').strip()
         }
         
         contacts.append(contact_data)
@@ -82,11 +98,18 @@ def parse_vcf_contacts(vcf_content: str) -> List[dict]:
             key = key.split(';')[0]  # Remove parameters
             
             if key == 'FN':  # Full Name (Display Name)
-                current_contact['display_name'] = value
+                current_contact['name'] = value
             elif key == 'TEL':
                 # Determine phone type based on parameters
                 if 'CELL' in line or 'MOBILE' in line:
-                    current_contact['mobile_phone'] = value
+                    current_contact['phone'] = value
+            # Add more VCF fields as needed for status, tags, metadata
+            # VCF does not have direct equivalents for 'status', 'tags', 'metadata_'
+            # These would typically be handled by custom X-properties or by post-processing
+            # For now, we'll leave them as default or empty for VCF imports
+            current_contact.setdefault('status', 'active')
+            current_contact.setdefault('tags', [])
+            current_contact.setdefault('metadata_', None)
     
     return contacts
 
@@ -189,7 +212,7 @@ async def export_contacts_csv(
     
     # Create CSV content
     output = io.StringIO()
-    fieldnames = ['name', 'phone']
+    fieldnames = ['name', 'phone', 'status', 'tags', 'opt_out_sms', 'opt_out_whatsapp', 'metadata_']
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
@@ -198,6 +221,11 @@ async def export_contacts_csv(
         writer.writerow({
             'name': contact.name or '',
             'phone': contact.phone or '',
+            'status': contact.status or 'active',
+            'tags': ','.join(contact.tags) if contact.tags else '',
+            'opt_out_sms': contact.opt_out_sms,
+            'opt_out_whatsapp': contact.opt_out_whatsapp,
+            'metadata_': contact.metadata_ or ''
         })
     
     return {

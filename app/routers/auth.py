@@ -6,8 +6,9 @@ from datetime import timedelta
 from app.database import get_db
 from app.auth import authenticate_user, create_access_token, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.models import User
-from app.schemas import UserCreate, Token, User as UserSchema, UserLogin
+from app.schema.user import UserCreate, User as UserSchema, UserLogin
 from app.dependencies import get_current_active_user
+from app.schema.auth import Token
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 

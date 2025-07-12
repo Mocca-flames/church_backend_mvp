@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.models import User
-from app.schemas import TokenData
+from app.schema.auth import TokenData
 import os
 from typing import Optional
 
