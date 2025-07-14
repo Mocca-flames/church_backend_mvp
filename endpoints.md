@@ -105,15 +105,11 @@ The updated communication object.
 
 ### `POST /communications/{communication_id}/send`
 
-Sends a communication to a list of contacts based on tags.
+Sends a communication.
 
 **Path Parameters:**
 
 - `communication_id`: The ID of the communication to send.
-
-**Query Parameters:**
-
-- `tags`: A list of tags to filter contacts by.
 
 **Response:**
 
@@ -127,6 +123,7 @@ Sends a communication to a list of phone numbers.
 
 - `communication_id`: The ID of the communication to send.
 - `phone_numbers`: A list of phone numbers to send the message to. This parameter should be repeated for each phone number.
+- `provider`: Optional. The SMS provider to use (e.g., 'twilio', 'africastalking', 'smsportal').
 
 **Example using `curl`:**
 
@@ -166,7 +163,6 @@ Returns a list of all contacts.
 - `limit`: The maximum number of contacts to return.
 - `search`: Optional. Search term for name or phone.
 - `status`: Optional. Filter by contact status (e.g., 'active', 'inactive', 'lead', 'customer').
-- `tag`: Optional. Filter by a specific tag.
 
 **Response:**
 
@@ -183,12 +179,12 @@ Creates a new contact.
   "name": "John Doe",
   "phone": "+1234567890",
   "status": "active",
-  "tags": ["family", "church_member"],
   "opt_out_sms": false,
   "opt_out_whatsapp": false,
   "metadata_": "{\"source\": \"website_signup\"}"
 }
 ```
+*Note: `name` is now optional. If not provided, the phone number will be used as the contact name.*
 
 **Response:**
 
@@ -211,6 +207,7 @@ Updates an existing contact.
   "opt_out_sms": true
 }
 ```
+*Note: `name` is now optional.*
 
 **Response:**
 
@@ -239,6 +236,7 @@ A summary of the import process.
   ]
 }
 ```
+*Note: For CSV imports, the 'name' column is now optional. If not provided, the phone number will be used as the contact name.*
 
 ### `DELETE /contacts/mass-delete`
 
@@ -283,7 +281,7 @@ Exports contacts to CSV format.
 ```json
 {
   "success": true,
-  "csv_content": "name,phone,status,tags,opt_out_sms,opt_out_whatsapp,metadata_\nJohn Doe,+1234567890,active,\"family,church_member\",false,false,\n",
+  "csv_content": "name,phone,status,opt_out_sms,opt_out_whatsapp,metadata_\nJohn Doe,+1234567890,active,false,false,\n",
   "filename": "contacts_export.csv"
 }
 ```

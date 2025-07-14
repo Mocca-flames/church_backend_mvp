@@ -50,6 +50,8 @@ def run_migrations_offline():
     )
 
     with context.begin_transaction():
+        import pdb
+        pdb.set_trace()
         context.run_migrations()
 
 

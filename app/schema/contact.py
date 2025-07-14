@@ -4,10 +4,9 @@ from datetime import datetime
 
 
 class ContactBase(BaseModel):
-    name: str
+    name: Optional[str] = None
     phone: str
     status: Optional[str] = 'active'
-    tags: Optional[List[str]] = []
     opt_out_sms: bool = False
     opt_out_whatsapp: bool = False
     metadata_: Optional[str] = None # JSON string for flexible data

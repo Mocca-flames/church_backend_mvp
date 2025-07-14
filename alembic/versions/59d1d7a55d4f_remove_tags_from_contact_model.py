@@ -1,9 +1,9 @@
-"""Update contact model to use phone instead of phone_number"""
+"""Remove tags from Contact model"""
 from alembic import op
 import sqlalchemy as sa
 
-revision = '12a6c2fbf7a0'
-down_revision = None
+revision = '59d1d7a55d4f'
+down_revision = '2ae48ea934d1'
 branch_labels = None
 depends_on = None
 

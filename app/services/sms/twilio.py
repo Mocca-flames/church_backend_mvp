@@ -1,12 +1,12 @@
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioException
 import os
-from typing import List, Dict, Any
+from typing import Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
 
-class SMSService:
+class TwilioSMSProvider:
     def __init__(self):
         self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
         self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
@@ -16,9 +16,10 @@ class SMSService:
             raise ValueError("Missing Twilio credentials in environment variables")
         
         self.client = Client(self.account_sid, self.auth_token)
+        logger.info("Twilio SMS provider initialized.")
     
     def send_sms(self, to_number: str, message: str) -> Dict[str, Any]:
-        """Send SMS to a single recipient"""
+        """Send SMS via Twilio to a single recipient"""
         try:
             # Ensure phone number is in E.164 format
             if not to_number.startswith('+'):
@@ -34,43 +35,22 @@ class SMSService:
                 'success': True,
                 'message_sid': message_instance.sid,
                 'status': message_instance.status,
-                'phone': to_number
+                'phone': to_number,
+                'provider': 'twilio'
             }
         except TwilioException as e:
             logger.error(f"Twilio error sending to {to_number}: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
-                'phone': to_number
+                'phone': to_number,
+                'provider': 'twilio'
             }
         except Exception as e:
             logger.error(f"General error sending to {to_number}: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
-                'phone': to_number
+                'phone': to_number,
+                'provider': 'twilio'
             }
-    
-    def send_bulk_sms(self, phone_numbers: List[str], message: str) -> Dict[str, Any]:
-        """Send SMS to multiple recipients"""
-        results = []
-        sent_count = 0
-        failed_count = 0
-        
-        for phone in phone_numbers:
-            result = self.send_sms(phone, message)
-            results.append(result)
-            
-            if result['success']:
-                sent_count += 1
-            else:
-                failed_count += 1
-        
-        return {
-            'total_sent': sent_count,
-            'total_failed': failed_count,
-            'results': results
-        }
-
-# Global SMS service instance
-sms_service = SMSService()

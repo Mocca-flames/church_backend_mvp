@@ -19,10 +19,9 @@ class Contact(Base):
     __tablename__ = "contacts"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
+    name = Column(String(200), nullable=True) # Changed to nullable=True
     phone = Column(String(20), unique=True, nullable=False, index=True)
     status = Column(String(50), default='active') # e.g., 'active', 'inactive', 'lead', 'customer'
-    tags = Column(ARRAY(String), default=[]) # For flexible grouping
     opt_out_sms = Column(Boolean, default=False)
     opt_out_whatsapp = Column(Boolean, default=False)
     metadata_ = Column(Text) # Store JSON string for flexible data

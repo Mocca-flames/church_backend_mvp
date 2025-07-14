@@ -1,9 +1,9 @@
-"""Update contact model to use phone instead of phone_number"""
+"""Add opt_out_sms and opt_out_whatsapp to Contact"""
 from alembic import op
 import sqlalchemy as sa
 
-revision = '12a6c2fbf7a0'
-down_revision = None
+revision = '8aef6be8a835'
+down_revision = '2ae48ea934d1'
 branch_labels = None
 depends_on = None
 

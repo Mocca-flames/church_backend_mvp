@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_
 from app.models import Contact
-from app.schemas import ContactCreate, ContactUpdate
+from app.schema.contact import ContactCreate, ContactUpdate
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import io
@@ -32,10 +32,9 @@ class ContactService:
         contact.phone = phone
         
         db_contact = Contact(
-            name=contact.name,
+            name=contact.name if contact.name else contact.phone,
             phone=contact.phone,
             status=contact.status,
-            tags=contact.tags,
             opt_out_sms=contact.opt_out_sms,
             opt_out_whatsapp=contact.opt_out_whatsapp,
             metadata_=contact.metadata_
@@ -78,7 +77,7 @@ class ContactService:
         self.db.refresh(db_contact)
         return db_contact
 
-    def get_contacts(self, skip: int = 0, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, tag: Optional[str] = None) -> List[Contact]:
+    def get_contacts(self, skip: int = 0, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""
         query = self.db.query(Contact)
         
@@ -91,11 +90,8 @@ class ContactService:
             )
         if status:
             query = query.filter(Contact.status == status)
-        if tag:
-            query = query.filter(Contact.tags.contains([tag]))
             
         return query.offset(skip).limit(limit).all()
-        return self.db.query(Contact).offset(skip).limit(limit).all()
     
     def get_contact_by_phone(self, phone: str) -> Contact:
         """Get contact by phone number"""
@@ -116,15 +112,6 @@ class ContactService:
             # Parse CSV
             df = pd.read_csv(io.StringIO(csv_content))
             
-            # Validate required columns
-            required_columns = ['name', 'phone']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                return {
-                    'success': False,
-                    'error': f"Missing required columns: {missing_columns}"
-                }
-            
             # Process contacts
             imported_count = 0
             failed_count = 0
@@ -143,10 +130,9 @@ class ContactService:
                     metadata_ = str(row.get('metadata_', '')).strip() if row.get('metadata_') else None
 
                     contact_data = ContactCreate(
-                        name=name,
+                        name=name if name else phone, # Use phone as name if name is empty
                         phone=phone,
                         status=status,
-                        tags=tags,
                         opt_out_sms=opt_out_sms,
                         opt_out_whatsapp=opt_out_whatsapp,
                         metadata_=metadata_
@@ -219,7 +205,6 @@ class ContactService:
                             # VCF standard doesn't have direct equivalents for 'status', 'tags', 'metadata_'
                             # We'll set sensible defaults or empty values
                             status = 'active' # Default status for VCF imports
-                            tags = [] # No direct VCF field for tags
                             opt_out_sms = False # No direct VCF field
                             opt_out_whatsapp = False # No direct VCF field
                             metadata_ = None # No direct VCF field
@@ -228,7 +213,6 @@ class ContactService:
                                 name=contact_name,
                                 phone=str(phone).strip(),
                                 status=status,
-                                tags=tags,
                                 opt_out_sms=opt_out_sms,
                                 opt_out_whatsapp=opt_out_whatsapp,
                                 metadata_=metadata_

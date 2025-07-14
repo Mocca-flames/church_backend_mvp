@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
 from app.models import User, Communication
-from app.schema.communication import Communication as CommunicationSchema, CommunicationCreate, CommunicationUpdate
+from app.schema.communication import Communication as CommunicationSchema, CommunicationCreate, CommunicationUpdate, BulkSMSRequest
 from app.services.communication_service import CommunicationService
 from app.dependencies import get_current_active_user
 
@@ -42,26 +42,25 @@ async def update_communication(
 @router.post("/{communication_id}/send", response_model=CommunicationSchema)
 async def send_communication(
     communication_id: int,
-    tags: Optional[List[str]] = Form(None),
+    provider: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     service = CommunicationService(db)
     try:
-        return service.send_communication(communication_id, tags)
+        return service.send_communication(communication_id, provider=provider)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/send-bulk", response_model=CommunicationSchema)
 async def send_bulk_sms(
-    communication_id: int = Form(...),
-    phone_numbers: List[str] = Form(...),
+    request: BulkSMSRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     service = CommunicationService(db)
     try:
-        return service.send_bulk_sms(communication_id, phone_numbers)
+        return service.send_bulk_sms(request.communication_id, request.phone_numbers, request.provider)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -30,3 +30,8 @@ class Communication(CommunicationBase):
     
     class Config:
         from_attributes = True
+
+class BulkSMSRequest(BaseModel):
+    communication_id: int
+    phone_numbers: List[str]
+    provider: Optional[str] = None

@@ -13,7 +13,8 @@ def create_tables():
 def create_super_admin_user():
     db: Session = SessionLocal()
     try:
-        create_tables() # Ensure tables are created before trying to add a user
+        # Tables should be created by Alembic migrations, not by create_tables()
+        # create_tables() 
         
         email = os.getenv("SUPER_ADMIN_EMAIL", "admin@thunder")
         password = os.getenv("SUPER_ADMIN_PASSWORD", "admin@1234")

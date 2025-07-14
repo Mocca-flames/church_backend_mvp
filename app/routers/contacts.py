@@ -16,11 +16,13 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 async def get_contacts(
     skip: int = 0,
     limit: int = 1000,
+    search: Optional[str] = None,
+    status: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     service = ContactService(db)
-    return service.get_contacts(skip=skip, limit=limit)
+    return service.get_contacts(skip=skip, limit=limit, search=search, status=status)
 
 @router.post("", response_model=Contact)
 async def create_contact(
@@ -71,7 +73,8 @@ def parse_csv_contacts(csv_content: str) -> List[dict]:
             'name': display_name,
             'phone': mobile_phone,
             'status': row.get('Status', 'active').strip(),
-            'tags': [tag.strip() for tag in row.get('Tags', '').split(',') if tag.strip()],
+            'opt_out_sms': str(row.get('Opt Out SMS', 'False')).strip().lower() == 'true',
+            'opt_out_whatsapp': str(row.get('Opt Out WhatsApp', 'False')).strip().lower() == 'true',
             'metadata_': row.get('Metadata', '').strip()
         }
         
@@ -108,7 +111,8 @@ def parse_vcf_contacts(vcf_content: str) -> List[dict]:
             # These would typically be handled by custom X-properties or by post-processing
             # For now, we'll leave them as default or empty for VCF imports
             current_contact.setdefault('status', 'active')
-            current_contact.setdefault('tags', [])
+            current_contact.setdefault('opt_out_sms', False)
+            current_contact.setdefault('opt_out_whatsapp', False)
             current_contact.setdefault('metadata_', None)
     
     return contacts
@@ -212,7 +216,7 @@ async def export_contacts_csv(
     
     # Create CSV content
     output = io.StringIO()
-    fieldnames = ['name', 'phone', 'status', 'tags', 'opt_out_sms', 'opt_out_whatsapp', 'metadata_']
+    fieldnames = ['name', 'phone', 'status', 'opt_out_sms', 'opt_out_whatsapp', 'metadata_']
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
@@ -222,7 +226,6 @@ async def export_contacts_csv(
             'name': contact.name or '',
             'phone': contact.phone or '',
             'status': contact.status or 'active',
-            'tags': ','.join(contact.tags) if contact.tags else '',
             'opt_out_sms': contact.opt_out_sms,
             'opt_out_whatsapp': contact.opt_out_whatsapp,
             'metadata_': contact.metadata_ or ''
