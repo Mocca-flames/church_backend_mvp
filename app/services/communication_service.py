@@ -93,8 +93,8 @@ class CommunicationService:
             if not provider_instance:
                 raise ValueError(f"SMS provider '{provider}' not found or not initialized.")
 
-            # Bulk optimization for Africa's Talking
-            if provider == 'africastalking' and hasattr(provider_instance, 'send_bulk_sms'):
+            # Bulk optimization for providers that support it
+            if hasattr(provider_instance, 'send_bulk_sms') and len(phone_numbers) > 1:
                 results = provider_instance.send_bulk_sms(phone_numbers, communication.message)
             else:
                 results = []
@@ -102,8 +102,17 @@ class CommunicationService:
                     single_result = provider_instance.send_sms(phone, communication.message)
                     results.append(single_result)
 
-            sent_count = sum(1 for r in results if r.get("success"))
-            failed_count = len(results) - sent_count
+            # Aggregate results from potentially different provider return formats
+            sent_count = 0
+            failed_count = 0
+            for r in results:
+                if isinstance(r, dict) and r.get("success"):
+                    sent_count += 1
+                elif isinstance(r, dict) and r.get("sent_count") is not None: # For bulk results
+                    sent_count += r.get("sent_count", 0)
+                    failed_count += r.get("failed_count", 0)
+                else:
+                    failed_count += 1 # Treat as failed if not explicitly successful or bulk result
 
             communication.sent_count = sent_count
             communication.failed_count = failed_count
@@ -143,17 +152,27 @@ class CommunicationService:
             if not provider_instance:
                 raise ValueError(f"SMS provider '{provider}' not found or not initialized.")
 
-            # Bulk optimization for Africa's Talking
-            if provider == 'africastalking' and hasattr(provider_instance, 'send_bulk_sms'):
+            # Always use send_bulk_sms if available for bulk sending
+            if hasattr(provider_instance, 'send_bulk_sms'):
                 results = provider_instance.send_bulk_sms(phone_numbers, communication.message)
             else:
+                # Fallback to individual sends if bulk is not supported
                 results = []
                 for phone in phone_numbers:
                     single_result = provider_instance.send_sms(phone, communication.message)
                     results.append(single_result)
 
-            sent_count = sum(1 for r in results if r.get("success"))
-            failed_count = len(results) - sent_count
+            # Aggregate results from potentially different provider return formats
+            sent_count = 0
+            failed_count = 0
+            for r in results:
+                if isinstance(r, dict) and r.get("success"):
+                    sent_count += 1
+                elif isinstance(r, dict) and r.get("sent_count") is not None: # For bulk results
+                    sent_count += r.get("sent_count", 0)
+                    failed_count += r.get("failed_count", 0)
+                else:
+                    failed_count += 1 # Treat as failed if not explicitly successful or bulk result
 
             communication.sent_count = sent_count
             communication.failed_count = failed_count

@@ -1,0 +1,2 @@
+client_id=6b545ba9-d345-4e3a-b9d9-ad3454c0d8bd
+api_key=3a8f76af-2a2e-4d99-ae2c-9c873e6cd2a7

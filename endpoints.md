@@ -123,7 +123,7 @@ Sends a communication to a list of phone numbers.
 
 - `communication_id`: The ID of the communication to send.
 - `phone_numbers`: A list of phone numbers to send the message to. This parameter should be repeated for each phone number.
-- `provider`: Optional. The SMS provider to use (e.g., 'twilio', 'africastalking', 'smsportal').
+- `provider`: Optional. The SMS provider to use (e.g., 'twilio', 'africastalking', 'smsportal', 'winsms', 'bulksms', 'clickatel').
 
 **Example using `curl`:**
 
