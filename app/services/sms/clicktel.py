@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 
 class ClickatelSMSProvider:
     def __init__(self):
-        self.api_key = os.getenv("CLICKATEL_API_KEY")
-        self.api_url = os.getenv("CLICKATEL_API_URL", "https://platform.clickatell.com/v1/message") # Default URL
+        self.api_key = "kG9ImCIdQDOf5qQn3R_cBA=="
+        self.api_url = "https://platform.clickatell.com/v1/message" # Default URL
         
         if not self.api_key:
             raise ValueError("Missing Clickatel API Key in environment variables")
