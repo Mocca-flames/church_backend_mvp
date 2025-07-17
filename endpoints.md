@@ -299,3 +299,68 @@ Exports contacts to VCF format.
   "filename": "contacts_export.vcf"
 }
 ```
+
+## Statistics
+
+### `GET /stats/contacts/count`
+
+Returns the total number of contacts in the database.
+
+**Response:**
+
+```json
+{
+  "total_contacts": 123
+}
+```
+
+### `GET /stats/sms/providers`
+
+Returns the number and list of available SMS providers.
+
+**Response:**
+
+```json
+{
+  "total_providers": 6,
+  "providers": ["twilio", "africastalking", "smsportal", "winsms", "bulksms", "clickatel"]
+}
+```
+
+### `GET /stats/communications/sent-count`
+
+Returns the total number of messages sent.
+
+**Response:**
+
+```json
+{
+  "total_messages_sent": 500
+}
+```
+
+### `GET /stats/communications/failed-count`
+
+Returns the total number of failed messages.
+
+**Response:**
+
+```json
+{
+  "total_messages_failed": 10
+}
+```
+
+### `GET /stats/communications/by-type`
+
+Returns the count of communications grouped by message type.
+
+**Response:**
+
+```json
+{
+  "counts_by_type": {
+    "sms": 450,
+    "whatsapp": 50
+  }
+}
