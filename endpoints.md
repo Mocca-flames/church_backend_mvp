@@ -153,9 +153,13 @@ The communication object.
 
 ## Contacts
 
+*Note: All contact management endpoints (except `/contacts/import-vcf-file` which is for file upload) require `super_admin` or `secretary` role for full functionality.*
+
 ### `GET /contacts/`
 
 Returns a list of all contacts.
+
+**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Query Parameters:**
 
@@ -172,27 +176,81 @@ A list of contact objects.
 
 Creates a new contact.
 
+**Authorization:** Requires `super_admin` or `secretary` role.
+
 **Request Body:**
 
 ```json
 {
   "name": "John Doe",
-  "phone": "+1234567890",
+  "phone": "0821234567",
   "status": "active",
   "opt_out_sms": false,
   "opt_out_whatsapp": false,
   "metadata_": "{\"source\": \"website_signup\"}"
 }
 ```
-*Note: `name` is now optional. If not provided, the phone number will be used as the contact name.*
+*Note: `name` is now optional. If not provided, the phone number will be used as the contact name. Phone numbers will be automatically formatted to `+27XXXXXXXXX` and validated for South African format.*
 
 **Response:**
 
 The newly created contact object.
 
+### `POST /contacts/add-list`
+
+Adds a list of contacts. This endpoint is suitable for manually adding multiple contacts via a JSON array.
+
+**Authorization:** Requires `super_admin` or `secretary` role.
+
+**Request Body:**
+
+```json
+{
+  "contacts": [
+    {
+      "name": "Alice Smith",
+      "phone": "27712345678",
+      "status": "active"
+    },
+    {
+      "name": "Bob Johnson",
+      "phone": "0601234567",
+      "status": "lead"
+    },
+    {
+      "name": "Invalid Number",
+      "phone": "12345"
+    }
+  ]
+}
+```
+*Note: Phone numbers will be automatically formatted to `+27XXXXXXXXX` and validated for South African format. Malformed numbers will be skipped and reported.*
+
+**Response:**
+
+A summary of the import process.
+
+```json
+{
+  "success": true,
+  "imported_count": 2,
+  "skipped_count": 1,
+  "total_contacts_in_list": 3,
+  "errors": [
+    {
+      "contact": "Invalid Number",
+      "error": "Invalid South African phone number length: '12345'. Formatted number '+12345' must be 13 characters long (+27XXXXXXXXX)."
+    }
+  ],
+  "message": "Imported 2 contacts, skipped 1 due to errors or duplicates."
+}
+```
+
 ### `PUT /contacts/{contact_id}`
 
 Updates an existing contact.
+
+**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Path Parameters:**
 
@@ -204,22 +262,25 @@ Updates an existing contact.
 {
   "name": "Jane Doe",
   "status": "inactive",
-  "opt_out_sms": true
+  "opt_out_sms": true,
+  "phone": "0729876543"
 }
 ```
-*Note: `name` is now optional.*
+*Note: `name` is now optional. Phone numbers will be automatically formatted to `+27XXXXXXXXX` and validated for South African format.*
 
 **Response:**
 
 The updated contact object.
 
-### `POST /contacts/import`
+### `POST /contacts/import-vcf-file`
 
-Imports contacts from a CSV or VCF file.
+Imports contacts from a VCF file upload.
 
-**Request Body:**
+**Authorization:** Requires `super_admin` or `secretary` role.
 
-- `file`: The file to import.
+**Request Body (form-data):**
+
+- `file`: The VCF file to import.
 
 **Response:**
 
@@ -231,16 +292,17 @@ A summary of the import process.
   "imported_count": 50,
   "failed_count": 2,
   "errors": [
-    "Row 3: Phone number already exists",
-    "Row 12: Card for Jane Doe is missing a phone number."
+    "Card for Jane Doe is missing a phone number.",
+    "Error processing phone number +27123456789 for 'John Doe': Contact with phone number +27123456789 already exists."
   ]
 }
 ```
-*Note: For CSV imports, the 'name' column is now optional. If not provided, the phone number will be used as the contact name.*
 
 ### `DELETE /contacts/mass-delete`
 
 Deletes multiple contacts by their IDs.
+
+**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Request Body:**
 
@@ -260,6 +322,8 @@ Deletes multiple contacts by their IDs.
 
 Deletes a contact.
 
+**Authorization:** Requires `super_admin` or `secretary` role.
+
 **Path Parameters:**
 
 - `contact_id`: The ID of the contact to delete.
@@ -276,12 +340,14 @@ Deletes a contact.
 
 Exports contacts to CSV format.
 
+**Authorization:** Requires `super_admin` or `secretary` role.
+
 **Response:**
 
 ```json
 {
   "success": true,
-  "csv_content": "name,phone,status,opt_out_sms,opt_out_whatsapp,metadata_\nJohn Doe,+1234567890,active,false,false,\n",
+  "csv_content": "name,phone,status,opt_out_sms,opt_out_whatsapp,metadata_\nJohn Doe,+27821234567,active,false,false,\n",
   "filename": "contacts_export.csv"
 }
 ```
@@ -290,12 +356,14 @@ Exports contacts to CSV format.
 
 Exports contacts to VCF format.
 
+**Authorization:** Requires `super_admin` or `secretary` role.
+
 **Response:**
 
 ```json
 {
   "success": true,
-  "vcf_content": "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nTEL;TYPE=CELL:+1234567890\nEND:VCARD\n",
+  "vcf_content": "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nTEL;TYPE=CELL:+27821234567\nEND:VCARD\n",
   "filename": "contacts_export.vcf"
 }
 ```

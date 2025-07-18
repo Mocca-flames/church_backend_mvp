@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import csv
 import io
 import re
@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import User
 from app.schema.contact import Contact, ContactCreate, ContactUpdate, ContactImport
 from app.services.contact_service import ContactService
-from app.dependencies import get_current_active_user
+from app.dependencies import get_current_active_user, get_current_contact_manager
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
@@ -19,7 +19,7 @@ async def get_contacts(
     search: Optional[str] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
     return service.get_contacts(skip=skip, limit=limit, search=search, status=status)
@@ -28,7 +28,7 @@ async def get_contacts(
 async def create_contact(
     contact: ContactCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
     try:
@@ -36,129 +36,39 @@ async def create_contact(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.put("/{contact_id}", response_model=Contact)
-async def update_contact(
-    contact_id: int,
-    contact: ContactUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
-):
-    service = ContactService(db)
-    updated_contact = service.update_contact(contact_id, contact)
-    if not updated_contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    return updated_contact
-
-def parse_csv_contacts(csv_content: str) -> List[dict]:
-    """Parse CSV content and extract contact information"""
-    contacts = []
-    csv_reader = csv.DictReader(io.StringIO(csv_content))
-    
-    for row in csv_reader:
-        # Extract display name (prioritize Display Name, then First Name + Last Name)
-        display_name = row.get('Display Name', '').strip()
-        if not display_name:
-            first_name = row.get('First Name', '').strip()
-            last_name = row.get('Last Name', '').strip()
-            display_name = f"{first_name} {last_name}".strip()
-        
-        # Extract mobile phone number
-        mobile_phone = row.get('Mobile Phone', '').strip()
-        
-        # Skip empty contacts
-        if not display_name and not mobile_phone:
-            continue
-            
-        contact_data = {
-            'name': display_name,
-            'phone': mobile_phone,
-            'status': row.get('Status', 'active').strip(),
-            'opt_out_sms': str(row.get('Opt Out SMS', 'False')).strip().lower() == 'true',
-            'opt_out_whatsapp': str(row.get('Opt Out WhatsApp', 'False')).strip().lower() == 'true',
-            'metadata_': row.get('Metadata', '').strip()
-        }
-        
-        contacts.append(contact_data)
-    
-    return contacts
-
-def parse_vcf_contacts(vcf_content: str) -> List[dict]:
-    """Parse VCF content and extract contact information"""
-    contacts = []
-    current_contact = {}
-    
-    for line in vcf_content.split('\n'):
-        line = line.strip()
-        
-        if line.startswith('BEGIN:VCARD'):
-            current_contact = {}
-        elif line.startswith('END:VCARD'):
-            if current_contact:
-                contacts.append(current_contact)
-                current_contact = {}
-        elif ':' in line:
-            key, value = line.split(':', 1)
-            key = key.split(';')[0]  # Remove parameters
-            
-            if key == 'FN':  # Full Name (Display Name)
-                current_contact['name'] = value
-            elif key == 'TEL':
-                # Determine phone type based on parameters
-                if 'CELL' in line or 'MOBILE' in line:
-                    current_contact['phone'] = value
-            # Add more VCF fields as needed for status, tags, metadata
-            # VCF does not have direct equivalents for 'status', 'tags', 'metadata_'
-            # These would typically be handled by custom X-properties or by post-processing
-            # For now, we'll leave them as default or empty for VCF imports
-            current_contact.setdefault('status', 'active')
-            current_contact.setdefault('opt_out_sms', False)
-            current_contact.setdefault('opt_out_whatsapp', False)
-            current_contact.setdefault('metadata_', None)
-    
-    return contacts
-
-@router.post("/import")
-async def import_contacts(
+@router.post("/add-list", response_model=Dict[str, Any]) # New endpoint for adding list of contacts
+async def add_contacts_from_list(
     contact_import: ContactImport,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
-    
     imported_count = 0
     skipped_count = 0
     errors = []
-    
-    for contact_data in contact_import.contacts:
-        phone = str(contact_data.phone).strip()
-        
-        # Clean phone number for checking duplicates
-        cleaned_phone = phone
-        if not cleaned_phone.startswith('+'):
-            cleaned_phone = '+27' + cleaned_phone.lstrip('0')
 
-        # Check if contact already exists with the cleaned phone number
-        if service.get_contact_by_phone(cleaned_phone):
-            skipped_count += 1
-            continue
-            
+    for contact_data in contact_import.contacts:
         try:
-            # The service will handle its own cleaning and validation
             service.create_contact(contact_data)
             imported_count += 1
-            
-        except Exception as e:
+        except ValueError as e:
+            skipped_count += 1
             errors.append({
-                'contact': contact_data.name or 'Unnamed',
+                'contact': contact_data.name or contact_data.phone,
                 'error': str(e)
             })
+        except Exception as e:
             skipped_count += 1
+            errors.append({
+                'contact': contact_data.name or contact_data.phone,
+                'error': f"Unexpected error: {str(e)}"
+            })
             
     result = {
         'success': True,
         'imported_count': imported_count,
         'skipped_count': skipped_count,
-        'total_contacts': len(contact_import.contacts),
+        'total_contacts_in_list': len(contact_import.contacts),
         'errors': errors
     }
     
@@ -169,11 +79,49 @@ async def import_contacts(
         
     return result
 
+@router.put("/{contact_id}", response_model=Contact)
+async def update_contact(
+    contact_id: int,
+    contact: ContactUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
+):
+    service = ContactService(db)
+    try:
+        updated_contact = service.update_contact(contact_id, contact)
+        if not updated_contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return updated_contact
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Removed parse_csv_contacts and parse_vcf_contacts as they are not used directly by endpoints
+# and CSV import is deferred. VCF import is handled by service directly.
+
+@router.post("/import", response_model=Dict[str, Any]) # This endpoint was for JSON list import, now /add-list handles it.
+# Renaming this to /import-vcf-file to be explicit about file upload for VCF
+async def import_contacts_vcf_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
+):
+    service = ContactService(db)
+    if not file.filename.endswith('.vcf'):
+        raise HTTPException(status_code=400, detail="Only .vcf files are supported for import.")
+    
+    vcf_content = (await file.read()).decode('utf-8')
+    result = service.import_contacts_from_vcf(vcf_content)
+    
+    if not result['success']:
+        raise HTTPException(status_code=400, detail=result.get('error', 'VCF import failed'))
+    
+    return result
+
 @router.delete("/mass-delete")
 async def mass_delete_contacts(
     contact_ids: List[int],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
     deleted_count = 0
@@ -197,7 +145,7 @@ async def mass_delete_contacts(
 async def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
     if service.delete_contact(contact_id):
@@ -208,7 +156,7 @@ async def delete_contact(
 @router.get("/export/csv")
 async def export_contacts_csv(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     """Export contacts to CSV format"""
     service = ContactService(db)
@@ -240,7 +188,7 @@ async def export_contacts_csv(
 @router.get("/export/vcf")
 async def export_contacts_vcf(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     """Export contacts to VCF format"""
     service = ContactService(db)

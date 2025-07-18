@@ -9,27 +9,57 @@ import io
 import logging
 import vobject
 import json
-
-logger = logging.getLogger(__name__)
+import re
 
 logger = logging.getLogger(__name__)
 
 class ContactService:
     def __init__(self, db: Session):
         self.db = db
-    
+
+    def _clean_and_validate_phone(self, phone: str) -> str:
+        """
+        Cleans and validates a South African phone number.
+        Ensures it's in +27XXXXXXXXX format (13 characters).
+        Raises ValueError for invalid formats.
+        """
+        original_phone = phone
+        phone = re.sub(r'\D', '', phone) # Remove all non-digits
+
+        if not phone:
+            raise ValueError("Phone number cannot be empty.")
+
+        # Handle numbers starting with '0'
+        if phone.startswith('0'):
+            phone = '27' + phone[1:]
+        # Handle numbers starting with '27' but without '+'
+        elif phone.startswith('27') and not original_phone.startswith('+'):
+            pass # Already in '27XXXXXXXXX' format
+        # Handle numbers already starting with '+27'
+        elif phone.startswith('27') and original_phone.startswith('+'):
+            phone = phone # Keep as is, will add '+' later
+        else:
+            raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Must start with '0', '27', or '+27'.")
+
+        # Add '+' prefix
+        formatted_phone = '+' + phone
+
+        # Final length validation: +27 + 9 digits = 13 characters
+        if len(formatted_phone) != 13:
+            raise ValueError(f"Invalid phone number length: '{original_phone}'. Formatted number '{formatted_phone}' must be 13 characters long (+27XXXXXXXXX).")
+
+        # Specific South African number pattern validation
+        # Covers mobile (6,7,8,9) and common landline area codes
+        sa_phone_pattern = re.compile(r"^\+27[6-9]\d{8}$|^\+27(1[0-8]|2[0-35-8]|3[1-69]|4[0-57-9]|5[0-46-8])\d{7}$")
+        if not sa_phone_pattern.match(formatted_phone):
+            raise ValueError(f"Invalid South African phone number pattern: '{original_phone}'. Formatted number '{formatted_phone}' does not match expected SA patterns.")
+
+        return formatted_phone
+
     def create_contact(self, contact: ContactCreate) -> Contact:
         """Create a new contact"""
         # Clean and validate phone number
-        phone = str(contact.phone).strip()
-        if not phone.startswith('+'):
-            phone = '+27' + phone.lstrip('0')  # Assume South African format for numbers without country code
-
-        # Validate phone number length for South African numbers
-        if phone.startswith('+27') and len(phone) != 12:
-            raise ValueError(f"Invalid phone number: '{phone}'. South African numbers must have 12 characters (e.g., +27123456789).")
-
-        contact.phone = phone
+        contact.phone = self._clean_and_validate_phone(contact.phone)
         
         db_contact = Contact(
             name=contact.name if contact.name else contact.phone,
@@ -39,10 +69,17 @@ class ContactService:
             opt_out_whatsapp=contact.opt_out_whatsapp,
             metadata_=contact.metadata_
         )
-        self.db.add(db_contact)
-        self.db.commit()
-        self.db.refresh(db_contact)
-        return db_contact
+        try:
+            self.db.add(db_contact)
+            self.db.commit()
+            self.db.refresh(db_contact)
+            return db_contact
+        except IntegrityError:
+            self.db.rollback()
+            raise ValueError(f"Contact with phone number {contact.phone} already exists.")
+        except Exception as e:
+            self.db.rollback()
+            raise e
     
     def update_contact(self, contact_id: int, contact_update: ContactUpdate) -> Optional[Contact]:
         """Update an existing contact"""
@@ -52,30 +89,33 @@ class ContactService:
         
         update_data = contact_update.model_dump(exclude_unset=True)
         
-        # Handle phone number cleaning if it's being updated
+        # Handle phone number cleaning and validation if it's being updated
         if 'phone' in update_data and update_data['phone'] is not None:
-            phone = str(update_data['phone']).strip()
-            if not phone.startswith('+'):
-                phone = '+27' + phone.lstrip('0')
-            if phone.startswith('+27') and len(phone) != 12:
-                raise ValueError(f"Invalid phone number: '{phone}'. South African numbers must have 12 characters (e.g., +27123456789).")
-            update_data['phone'] = phone
+            new_phone = self._clean_and_validate_phone(update_data['phone'])
+            update_data['phone'] = new_phone
             
-            # Check for duplicate phone number if it's being changed
+            # Check for duplicate phone number if it's being changed to an existing one
             existing_contact_with_phone = self.db.query(Contact).filter(
-                Contact.phone == phone,
+                Contact.phone == new_phone,
                 Contact.id != contact_id
             ).first()
             if existing_contact_with_phone:
-                raise IntegrityError(f"Contact with phone number {phone} already exists.", {}, {})
+                raise IntegrityError(f"Contact with phone number {new_phone} already exists.", {}, {})
 
         for key, value in update_data.items():
             setattr(db_contact, key, value)
         
-        self.db.add(db_contact)
-        self.db.commit()
-        self.db.refresh(db_contact)
-        return db_contact
+        try:
+            self.db.add(db_contact)
+            self.db.commit()
+            self.db.refresh(db_contact)
+            return db_contact
+        except IntegrityError:
+            self.db.rollback()
+            raise ValueError(f"Update failed: Contact with phone number {update_data['phone']} already exists.")
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def get_contacts(self, skip: int = 0, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""

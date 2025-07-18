@@ -4,11 +4,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from app.database import get_db
-from app.auth import authenticate_user, create_access_token, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.auth import authenticate_user, create_access_token, create_refresh_token, get_password_hash, verify_token, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 from app.models import User
 from app.schema.user import UserCreate, User as UserSchema, UserLogin
 from app.dependencies import get_current_active_user
-from app.schema.auth import Token
+from app.schema.auth import Token, TokenRefresh, TokenData
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -29,8 +29,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
+    refresh_token = create_refresh_token(
+        data={"sub": user.email}, expires_delta=timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    )
     logging.info(f"Login successful for email: {form_data.username}")
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 
 @router.post("/register", response_model=UserSchema)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -61,3 +64,23 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserSchema)
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
     return current_user
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(token_refresh: TokenRefresh, db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    token_data = verify_token(token_refresh.refresh_token, credentials_exception)
+    
+    user = db.query(User).filter(User.email == token_data.email).first()
+    if user is None:
+        raise credentials_exception
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    logging.info(f"Token refreshed for email: {user.email}")
+    return {"access_token": access_token, "token_type": "bearer"}

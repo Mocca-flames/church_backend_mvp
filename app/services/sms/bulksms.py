@@ -52,8 +52,9 @@ class BulkSMSProvider:
             if response_json and isinstance(response_json, list) and response_json[0].get('status') == 'ACCEPTED':
                 return {
                     'success': True,
-                    'message_id': response_json[0].get('id'),
-                    'status': response_json[0].get('status'),
+                    'message_id': response_json[0].get('submission', {}).get('id'), # Corrected extraction based on provided response structure
+                    'status': "", # Updated as per request
+                    'date': "", # Added as per request
                     'phone': to_number,
                     'provider': 'bulksms'
                 }
