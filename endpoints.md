@@ -4,24 +4,45 @@ This document provides a comprehensive guide to all the available API endpoints,
 
 ## Authentication
 
+After a successful login or registration, you will receive an `access_token`. This token must be included in the `Authorization` header of subsequent requests to protected endpoints. The format should be `Authorization: Bearer YOUR_ACCESS_TOKEN`.
+
 All endpoints require a valid `Bearer` token in the `Authorization` header, except for the `/auth/login` and `/auth/register` endpoints.
 
 ### `POST /auth/login`
 
 Authenticates a user and returns an access token.
 
-**Request Body:**
+**Request Body (form-data):**
 
 - `username`: The user's email address.
 - `password`: The user's password.
+
+**Example using `curl`:**
+
+```bash
+curl -X POST "http://your-api-url/auth/login" \
+-H "Content-Type: application/x-www-form-urlencoded" \
+-d "username=user@example.com&password=your_password"
+```
 
 **Response:**
 
 ```json
 {
   "access_token": "your_access_token",
-  "token_type": "bearer"
+  "token_type": "bearer",
+  "refresh_token": "your_refresh_token"
 }
+```
+
+**Example of using the obtained token:**
+
+```bash
+# Assuming you stored the access_token in a variable
+ACCESS_TOKEN="your_access_token"
+
+curl -X GET "http://your-api-url/auth/me" \
+-H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ### `POST /auth/register`
@@ -41,7 +62,53 @@ Registers a new user.
 
 **Response:**
 
-The newly created user object.
+```json
+{
+    "email": "juniorbypassfrp@gmail.com",
+    "role": "admin",
+    "is_active": true,
+    "id": 4,
+    "created_at": "2025-07-18T23:28:55.533033Z",
+    "access_token": "your_access_token",
+    "token_type": "bearer"
+}
+```
+
+For a successful registration, the backend is expected to return a JSON object containing:
+
+- `access_token`: A string representing the authentication token.
+- `token_type`: A string indicating the type of token (e.g., "Bearer").
+
+**Example of using the obtained token:**
+
+```bash
+# Assuming you stored the access_token in a variable
+ACCESS_TOKEN="your_access_token"
+
+curl -X GET "http://your-api-url/auth/me" \
+-H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### `POST /auth/refresh`
+
+Refreshes an access token using a refresh token.
+
+**Request Body (JSON):**
+
+```json
+{
+  "refresh_token": "your_refresh_token_here"
+}
+```
+
+**Response:**
+
+```json
+{
+  "access_token": "your_new_access_token",
+  "token_type": "bearer"
+}
+```
 
 ### `GET /auth/me`
 

@@ -8,7 +8,7 @@ from app.auth import authenticate_user, create_access_token, create_refresh_toke
 from app.models import User
 from app.schema.user import UserCreate, User as UserSchema, UserLogin
 from app.dependencies import get_current_active_user
-from app.schema.auth import Token, TokenRefresh, TokenData
+from app.schema.auth import Token, TokenRefresh, TokenData, UserRegisterResponse
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -35,7 +35,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     logging.info(f"Login successful for email: {form_data.username}")
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 
-@router.post("/register", response_model=UserSchema)
+@router.post("/register", response_model=UserRegisterResponse)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     logging.info(f"Attempting registration for email: {user.email}")
     # Check if user already exists
@@ -58,8 +58,14 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": db_user.email}, expires_delta=access_token_expires
+    )
+    
     logging.info(f"Registration successful for email: {user.email}")
-    return db_user
+    return {**db_user.__dict__, "access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserSchema)
 async def read_users_me(current_user: User = Depends(get_current_active_user)):

@@ -8,7 +8,7 @@ from app.schema.auth import TokenData
 import os
 from typing import Optional
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+SECRET_KEY = "your-super-secret-key-here" # Directly setting for debugging, should be loaded from .env
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7 # Refresh tokens expire in 7 days
@@ -32,10 +32,10 @@ def authenticate_user(db: Session, email: str, password: str):
     # MVP: Bypass password check for easy testing
     logging.info(f"Authenticating user: {email}")
     user = get_user(db, email)
-    if not user:
-        logging.warning(f"Authentication failed for {email}: User not found.")
+    if not user or not verify_password(password, user.password_hash):
+        logging.warning(f"Authentication failed for {email}: Incorrect password or user not found.")
         return None
-    logging.info(f"User {email} authenticated successfully (password check bypassed).")
+    logging.info(f"User {email} authenticated successfully.")
     return user
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

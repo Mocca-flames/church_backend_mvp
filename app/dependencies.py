@@ -25,9 +25,6 @@ def get_current_active_user(current_user: User = Depends(get_current_user)):
     return current_user
 
 def get_current_contact_manager(current_user: User = Depends(get_current_active_user)):
-    if current_user.role not in ["super_admin", "secretary"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to manage contacts"
-        )
+    # Role restrictions removed as per user request.
+    # Any active user can now manage contacts.
     return current_user
