@@ -2,9 +2,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import timedelta
 from app.database import get_db
-from app.auth import authenticate_user, create_access_token, create_refresh_token, get_password_hash, verify_token, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+from app.auth import authenticate_user, create_access_token, create_refresh_token, get_password_hash, verify_token
 from app.models import User
 from app.schema.user import UserCreate, User as UserSchema, UserLogin
 from app.dependencies import get_current_active_user
@@ -25,12 +24,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email}
     )
     refresh_token = create_refresh_token(
-        data={"sub": user.email}, expires_delta=timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        data={"sub": user.email}
     )
     logging.info(f"Login successful for email: {form_data.username}")
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
@@ -59,9 +57,8 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": db_user.email}, expires_delta=access_token_expires
+        data={"sub": db_user.email}
     )
     
     logging.info(f"Registration successful for email: {user.email}")
@@ -84,9 +81,8 @@ async def refresh_token(token_refresh: TokenRefresh, db: Session = Depends(get_d
     if user is None:
         raise credentials_exception
     
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email}
     )
     logging.info(f"Token refreshed for email: {user.email}")
     return {"access_token": access_token, "token_type": "bearer"}

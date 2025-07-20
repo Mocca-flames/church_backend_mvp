@@ -220,13 +220,11 @@ The communication object.
 
 ## Contacts
 
-*Note: All contact management endpoints (except `/contacts/import-vcf-file` which is for file upload) require `super_admin` or `secretary` role for full functionality.*
 
 ### `GET /contacts/`
 
 Returns a list of all contacts.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Query Parameters:**
 
@@ -243,7 +241,6 @@ A list of contact objects.
 
 Creates a new contact.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Request Body:**
 
@@ -267,7 +264,6 @@ The newly created contact object.
 
 Adds a list of contacts. This endpoint is suitable for manually adding multiple contacts via a JSON array.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Request Body:**
 
@@ -317,7 +313,6 @@ A summary of the import process.
 
 Updates an existing contact.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Path Parameters:**
 
@@ -343,7 +338,6 @@ The updated contact object.
 
 Imports contacts from a VCF file upload.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Request Body (form-data):**
 
@@ -369,7 +363,6 @@ A summary of the import process.
 
 Deletes multiple contacts by their IDs.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Request Body:**
 
@@ -389,7 +382,6 @@ Deletes multiple contacts by their IDs.
 
 Deletes a contact.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Path Parameters:**
 
@@ -407,7 +399,6 @@ Deletes a contact.
 
 Exports contacts to CSV format.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Response:**
 
@@ -423,7 +414,6 @@ Exports contacts to CSV format.
 
 Exports contacts to VCF format.
 
-**Authorization:** Requires `super_admin` or `secretary` role.
 
 **Response:**
 

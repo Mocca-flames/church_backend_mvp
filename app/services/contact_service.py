@@ -19,40 +19,41 @@ class ContactService:
 
     def _clean_and_validate_phone(self, phone: str) -> str:
         """
-        Cleans and validates a South African phone number.
+        Cleans and validates a South African phone number according to specified rules.
         Ensures it's in +27XXXXXXXXX format (13 characters).
         Raises ValueError for invalid formats.
         """
         original_phone = phone
-        phone = re.sub(r'\D', '', phone) # Remove all non-digits
+        digits_only = re.sub(r'\D', '', phone)
 
-        if not phone:
+        if not digits_only:
             raise ValueError("Phone number cannot be empty.")
 
-        # Handle numbers starting with '0'
-        if phone.startswith('0'):
-            phone = '27' + phone[1:]
-        # Handle numbers starting with '27' but without '+'
-        elif phone.startswith('27') and not original_phone.startswith('+'):
-            pass # Already in '27XXXXXXXXX' format
-        # Handle numbers already starting with '+27'
-        elif phone.startswith('27') and original_phone.startswith('+'):
-            phone = phone # Keep as is, will add '+' later
+        formatted_phone = None
+
+        if original_phone.startswith('0'):
+            if len(digits_only) == 10 and digits_only.startswith('0'):
+                # Remove leading '0' and prepend '+27'
+                formatted_phone = '+27' + digits_only[1:]
+            else:
+                raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '0' must be 10 digits long.")
+        elif original_phone.startswith('27'):
+            if len(digits_only) == 11 and digits_only.startswith('27'):
+                # Prepend '+'
+                formatted_phone = '+' + digits_only
+            else:
+                raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '27' must be 11 digits long.")
+        elif original_phone.startswith('+27'):
+            if len(digits_only) == 11 and digits_only.startswith('27'):
+                formatted_phone = '+' + digits_only
+            else:
+                raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '+27' must have 11 digits after the prefix (e.g., '+27721234567').")
         else:
             raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Must start with '0', '27', or '+27'.")
 
-        # Add '+' prefix
-        formatted_phone = '+' + phone
-
-        # Final length validation: +27 + 9 digits = 13 characters
-        if len(formatted_phone) != 13:
-            raise ValueError(f"Invalid phone number length: '{original_phone}'. Formatted number '{formatted_phone}' must be 13 characters long (+27XXXXXXXXX).")
-
-        # Specific South African number pattern validation
-        # Covers mobile (6,7,8,9) and common landline area codes
-        sa_phone_pattern = re.compile(r"^\+27[6-9]\d{8}$|^\+27(1[0-8]|2[0-35-8]|3[1-69]|4[0-57-9]|5[0-46-8])\d{7}$")
-        if not sa_phone_pattern.match(formatted_phone):
-            raise ValueError(f"Invalid South African phone number pattern: '{original_phone}'. Formatted number '{formatted_phone}' does not match expected SA patterns.")
+        # Final check for the expected 12-character format (+27XXXXXXXXX)
+        if len(formatted_phone) != 12:
+            raise ValueError(f"Internal error: Formatted phone number '{formatted_phone}' has incorrect length. Expected 12 characters (+27XXXXXXXXX).")
 
         return formatted_phone
 

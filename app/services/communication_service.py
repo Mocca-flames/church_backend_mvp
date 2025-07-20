@@ -71,8 +71,6 @@ class CommunicationService:
         if not communication:
             raise ValueError("Communication not found")
 
-        if communication.status != 'draft':
-            raise ValueError("Communication has already been sent")
 
         recipients = self.get_recipients(communication.recipient_group)
         phone_numbers = [contact.phone for contact in recipients]
@@ -133,8 +131,6 @@ class CommunicationService:
         if not communication:
             raise ValueError("Communication not found")
 
-        if communication.status != 'draft':
-            raise ValueError("Communication has already been sent")
 
         if not phone_numbers:
             raise ValueError("No recipients found")
