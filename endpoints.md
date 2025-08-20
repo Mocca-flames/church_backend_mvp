@@ -232,6 +232,7 @@ Returns a list of all contacts.
 - `limit`: The maximum number of contacts to return.
 - `search`: Optional. Search term for name or phone.
 - `status`: Optional. Filter by contact status (e.g., 'active', 'inactive', 'lead', 'customer').
+- `tags`: Optional. Filter contacts by tags (e.g., `?tags=lead&tags=customer`).
 
 **Response:**
 
@@ -333,6 +334,149 @@ Updates an existing contact.
 **Response:**
 
 The updated contact object.
+
+### `POST /contacts/{contact_id}/tags/add`
+
+Adds tags to a specific contact.
+
+**Path Parameters:**
+
+- `contact_id`: The ID of the contact to update.
+
+**Request Body:**
+
+```json
+{
+  "tags": ["new_tag", "another_tag"]
+}
+```
+
+**Response:**
+
+The updated contact object.
+
+### `POST /contacts/{contact_id}/tags/remove`
+
+Removes tags from a specific contact.
+
+**Path Parameters:**
+
+- `contact_id`: The ID of the contact to update.
+
+**Request Body:**
+
+```json
+{
+  "tags": ["tag_to_remove"]
+}
+```
+
+**Response:**
+
+The updated contact object.
+
+### `PUT /contacts/{contact_id}/tags`
+
+Sets tags for a contact, replacing all existing tags.
+
+**Path Parameters:**
+
+- `contact_id`: The ID of the contact to update.
+
+**Request Body:**
+
+```json
+{
+  "tags": ["tag1", "tag2"]
+}
+```
+
+**Response:**
+
+The updated contact object.
+
+### `GET /contacts/{contact_id}/tags`
+
+Returns tags for a specific contact.
+
+**Path Parameters:**
+
+- `contact_id`: The ID of the contact.
+
+**Response:**
+
+```json
+["tag1", "tag2"]
+```
+
+### `GET /contacts/tags/all`
+
+Returns all unique tags across all contacts.
+
+**Response:**
+
+```json
+["tag1", "tag2", "tag3"]
+```
+
+### `GET /contacts/tags/statistics`
+
+Returns tag usage statistics (tag name -> count).
+
+**Response:**
+
+```json
+{
+  "tag1": 10,
+  "tag2": 5
+}
+```
+
+### `POST /contacts/tags/bulk-add`
+
+Adds tags to multiple contacts.
+
+**Request Body:**
+
+```json
+{
+  "contact_ids": [1, 2, 3],
+  "tags": ["new_tag", "common_tag"]
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "updated_count": 3,
+  "errors": []
+}
+```
+
+### `POST /contacts/tags/bulk-remove`
+
+Removes tags from multiple contacts.
+
+**Request Body:**
+
+```json
+{
+  "contact_ids": [1, 2, 3],
+  "tags": ["old_tag"]
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "updated_count": 3,
+  "errors": []
+}
+```
 
 ### `POST /contacts/import-vcf-file`
 

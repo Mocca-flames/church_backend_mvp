@@ -57,6 +57,32 @@ class ContactService:
 
         return formatted_phone
 
+    def _get_contact_metadata(self, contact: Contact) -> Dict[str, Any]:
+        """Get contact metadata as a dictionary"""
+        if not contact.metadata_:
+            return {}
+        try:
+            return json.loads(contact.metadata_)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    def _set_contact_metadata(self, contact: Contact, metadata: Dict[str, Any]) -> None:
+        """Set contact metadata from dictionary"""
+        contact.metadata_ = json.dumps(metadata) if metadata else None
+
+    def _get_contact_tags(self, contact: Contact) -> List[str]:
+        """Get tags for a contact"""
+        metadata = self._get_contact_metadata(contact)
+        return metadata.get('tags', [])
+
+    def _set_contact_tags(self, contact: Contact, tags: List[str]) -> None:
+        """Set tags for a contact"""
+        metadata = self._get_contact_metadata(contact)
+        # Clean and deduplicate tags
+        cleaned_tags = list(set([tag.strip() for tag in tags if tag.strip()]))
+        metadata['tags'] = cleaned_tags
+        self._set_contact_metadata(contact, metadata)
+
     def create_contact(self, contact: ContactCreate) -> Contact:
         """Create a new contact"""
         # Clean and validate phone number
@@ -118,7 +144,7 @@ class ContactService:
             self.db.rollback()
             raise e
 
-    def get_contacts(self, skip: int = 0, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None) -> List[Contact]:
+    def get_contacts(self, skip: int = 0, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, tags: Optional[List[str]] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""
         query = self.db.query(Contact)
         
@@ -131,8 +157,20 @@ class ContactService:
             )
         if status:
             query = query.filter(Contact.status == status)
+        
+        contacts = query.offset(skip).limit(limit).all()
+        
+        # Filter by tags if specified
+        if tags:
+            filtered_contacts = []
+            for contact in contacts:
+                contact_tags = self._get_contact_tags(contact)
+                # Check if contact has any of the specified tags
+                if any(tag in contact_tags for tag in tags):
+                    filtered_contacts.append(contact)
+            return filtered_contacts
             
-        return query.offset(skip).limit(limit).all()
+        return contacts
     
     def get_contact_by_phone(self, phone: str) -> Contact:
         """Get contact by phone number"""
@@ -146,6 +184,139 @@ class ContactService:
             self.db.commit()
             return True
         return False
+
+    def add_tags_to_contact(self, contact_id: int, tags: List[str]) -> Optional[Contact]:
+        """Add tags to a contact"""
+        contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
+        if not contact:
+            return None
+        
+        current_tags = self._get_contact_tags(contact)
+        # Add new tags to existing ones
+        all_tags = list(set(current_tags + [tag.strip() for tag in tags if tag.strip()]))
+        self._set_contact_tags(contact, all_tags)
+        
+        try:
+            self.db.add(contact)
+            self.db.commit()
+            self.db.refresh(contact)
+            return contact
+        except Exception as e:
+            self.db.rollback()
+            raise e
+
+    def remove_tags_from_contact(self, contact_id: int, tags: List[str]) -> Optional[Contact]:
+        """Remove tags from a contact"""
+        contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
+        if not contact:
+            return None
+        
+        current_tags = self._get_contact_tags(contact)
+        # Remove specified tags
+        updated_tags = [tag for tag in current_tags if tag not in tags]
+        self._set_contact_tags(contact, updated_tags)
+        
+        try:
+            self.db.add(contact)
+            self.db.commit()
+            self.db.refresh(contact)
+            return contact
+        except Exception as e:
+            self.db.rollback()
+            raise e
+
+    def set_contact_tags(self, contact_id: int, tags: List[str]) -> Optional[Contact]:
+        """Set tags for a contact (replaces all existing tags)"""
+        contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
+        if not contact:
+            return None
+        
+        # Clean and set tags
+        cleaned_tags = [tag.strip() for tag in tags if tag.strip()]
+        self._set_contact_tags(contact, cleaned_tags)
+        
+        try:
+            self.db.add(contact)
+            self.db.commit()
+            self.db.refresh(contact)
+            return contact
+        except Exception as e:
+            self.db.rollback()
+            raise e
+
+    def get_contact_tags(self, contact_id: int) -> Optional[List[str]]:
+        """Get tags for a specific contact"""
+        contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
+        if not contact:
+            return None
+        return self._get_contact_tags(contact)
+
+    def get_all_tags(self) -> List[str]:
+        """Get all unique tags across all contacts"""
+        contacts = self.db.query(Contact).all()
+        all_tags = set()
+        
+        for contact in contacts:
+            contact_tags = self._get_contact_tags(contact)
+            all_tags.update(contact_tags)
+        
+        return sorted(list(all_tags))
+
+    def get_tag_statistics(self) -> Dict[str, int]:
+        """Get statistics of tag usage (tag name -> count)"""
+        contacts = self.db.query(Contact).all()
+        tag_counts = {}
+        
+        for contact in contacts:
+            contact_tags = self._get_contact_tags(contact)
+            for tag in contact_tags:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        return dict(sorted(tag_counts.items()))
+
+    def bulk_add_tags(self, contact_ids: List[int], tags: List[str]) -> Dict[str, Any]:
+        """Add tags to multiple contacts"""
+        success_count = 0
+        failed_ids = []
+        
+        for contact_id in contact_ids:
+            try:
+                result = self.add_tags_to_contact(contact_id, tags)
+                if result:
+                    success_count += 1
+                else:
+                    failed_ids.append(contact_id)
+            except Exception:
+                failed_ids.append(contact_id)
+        
+        return {
+            'success_count': success_count,
+            'failed_count': len(failed_ids),
+            'failed_ids': failed_ids,
+            'tags_added': tags
+        }
+
+    def bulk_remove_tags(self, contact_ids: List[int], tags: List[str]) -> Dict[str, Any]:
+        """Remove tags from multiple contacts"""
+        success_count = 0
+        failed_ids = []
+        
+        for contact_id in contact_ids:
+            try:
+                result = self.remove_tags_from_contact(contact_id, tags)
+                if result:
+                    success_count += 1
+                else:
+                    failed_ids.append(contact_id)
+            except Exception:
+                failed_ids.append(contact_id)
+        
+        return {
+            'success_count': success_count,
+            'failed_count': len(failed_ids),
+            'failed_ids': failed_ids,
+            'tags_removed': tags
+        }
     
     def import_contacts_from_csv(self, csv_content: str) -> Dict[str, Any]:
         """Import contacts from CSV content"""
@@ -168,7 +339,21 @@ class ContactService:
                     tags = [tag.strip() for tag in tags_str.split(',') if tag.strip()] if tags_str else []
                     opt_out_sms = str(row.get('opt_out_sms', 'False')).strip().lower() == 'true'
                     opt_out_whatsapp = str(row.get('opt_out_whatsapp', 'False')).strip().lower() == 'true'
-                    metadata_ = str(row.get('metadata_', '')).strip() if row.get('metadata_') else None
+                    
+                    # Handle metadata and tags
+                    metadata_str = str(row.get('metadata_', '')).strip() if row.get('metadata_') else None
+                    metadata = {}
+                    if metadata_str:
+                        try:
+                            metadata = json.loads(metadata_str)
+                        except json.JSONDecodeError:
+                            metadata = {}
+                    
+                    # Add tags to metadata
+                    if tags:
+                        metadata['tags'] = tags
+                    
+                    final_metadata = json.dumps(metadata) if metadata else None
 
                     contact_data = ContactCreate(
                         name=name if name else phone, # Use phone as name if name is empty
@@ -176,7 +361,7 @@ class ContactService:
                         status=status,
                         opt_out_sms=opt_out_sms,
                         opt_out_whatsapp=opt_out_whatsapp,
-                        metadata_=metadata_
+                        metadata_=final_metadata
                     )
                     
                     self.create_contact(contact_data)

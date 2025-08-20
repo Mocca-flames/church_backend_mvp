@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from app.models import Communication, Contact
 from app.schema.communication import CommunicationCreate, CommunicationUpdate
 from datetime import datetime
@@ -186,3 +186,18 @@ class CommunicationService:
         if user_id:
             query = query.filter(Communication.created_by == user_id)
         return query.order_by(Communication.created_at.desc()).all()
+
+    def get_sent_count_stats(self) -> Dict[str, int]:
+        """
+        Retrieves the total count of sent and failed communications.
+        """
+        total_sent = self.db.query(func.sum(Communication.sent_count)).scalar()
+        total_failed = self.db.query(func.sum(Communication.failed_count)).scalar()
+
+        # Combine sent and failed counts as requested
+        combined_count = (total_sent if total_sent is not None else 0) + \
+                         (total_failed if total_failed is not None else 0)
+
+        return {
+            "sent_count": combined_count
+        }

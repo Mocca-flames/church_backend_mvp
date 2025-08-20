@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
 import csv
@@ -9,8 +9,17 @@ from app.models import User
 from app.schema.contact import Contact, ContactCreate, ContactUpdate, ContactImport
 from app.services.contact_service import ContactService
 from app.dependencies import get_current_active_user, get_current_contact_manager
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
+
+# Pydantic models for tag operations
+class TagRequest(BaseModel):
+    tags: List[str]
+
+class BulkTagRequest(BaseModel):
+    contact_ids: List[int]
+    tags: List[str]
 
 @router.get("", response_model=List[Contact])
 async def get_contacts(
@@ -18,11 +27,12 @@ async def get_contacts(
     limit: int = 1000,
     search: Optional[str] = None,
     status: Optional[str] = None,
+    tags: Optional[List[str]] = Query(None, description="Filter contacts by tags"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
-    return service.get_contacts(skip=skip, limit=limit, search=search, status=status)
+    return service.get_contacts(skip=skip, limit=limit, search=search, status=status, tags=tags)
 
 @router.post("", response_model=Contact)
 async def create_contact(
@@ -95,6 +105,117 @@ async def update_contact(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# Tag management endpoints
+@router.post("/{contact_id}/tags/add", response_model=Contact)
+async def add_tags_to_contact(
+    contact_id: int,
+    tag_request: TagRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Add tags to a specific contact"""
+    service = ContactService(db)
+    try:
+        updated_contact = service.add_tags_to_contact(contact_id, tag_request.tags)
+        if not updated_contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return updated_contact
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/{contact_id}/tags/remove", response_model=Contact)
+async def remove_tags_from_contact(
+    contact_id: int,
+    tag_request: TagRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Remove tags from a specific contact"""
+    service = ContactService(db)
+    try:
+        updated_contact = service.remove_tags_from_contact(contact_id, tag_request.tags)
+        if not updated_contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return updated_contact
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/{contact_id}/tags", response_model=Contact)
+async def set_contact_tags(
+    contact_id: int,
+    tag_request: TagRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Set tags for a contact (replaces all existing tags)"""
+    service = ContactService(db)
+    try:
+        updated_contact = service.set_contact_tags(contact_id, tag_request.tags)
+        if not updated_contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        return updated_contact
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{contact_id}/tags", response_model=List[str])
+async def get_contact_tags(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Get tags for a specific contact"""
+    service = ContactService(db)
+    tags = service.get_contact_tags(contact_id)
+    if tags is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return tags
+
+@router.get("/tags/all", response_model=List[str])
+async def get_all_tags(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Get all unique tags across all contacts"""
+    service = ContactService(db)
+    return service.get_all_tags()
+
+@router.get("/tags/statistics", response_model=Dict[str, int])
+async def get_tag_statistics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Get tag usage statistics (tag name -> count)"""
+    service = ContactService(db)
+    return service.get_tag_statistics()
+
+@router.post("/tags/bulk-add", response_model=Dict[str, Any])
+async def bulk_add_tags(
+    bulk_request: BulkTagRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Add tags to multiple contacts"""
+    service = ContactService(db)
+    try:
+        result = service.bulk_add_tags(bulk_request.contact_ids, bulk_request.tags)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/tags/bulk-remove", response_model=Dict[str, Any])
+async def bulk_remove_tags(
+    bulk_request: BulkTagRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """Remove tags from multiple contacts"""
+    service = ContactService(db)
+    try:
+        result = service.bulk_remove_tags(bulk_request.contact_ids, bulk_request.tags)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # Removed parse_csv_contacts and parse_vcf_contacts as they are not used directly by endpoints
 # and CSV import is deferred. VCF import is handled by service directly.
 
@@ -164,16 +285,21 @@ async def export_contacts_csv(
     
     # Create CSV content
     output = io.StringIO()
-    fieldnames = ['name', 'phone', 'status', 'opt_out_sms', 'opt_out_whatsapp', 'metadata_']
+    fieldnames = ['name', 'phone', 'status', 'tags', 'opt_out_sms', 'opt_out_whatsapp', 'metadata_']
     
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
     
     for contact in contacts:
+        # Get tags for this contact
+        contact_tags = service._get_contact_tags(contact)
+        tags_str = ','.join(contact_tags) if contact_tags else ''
+        
         writer.writerow({
             'name': contact.name or '',
             'phone': contact.phone or '',
             'status': contact.status or 'active',
+            'tags': tags_str,
             'opt_out_sms': contact.opt_out_sms,
             'opt_out_whatsapp': contact.opt_out_whatsapp,
             'metadata_': contact.metadata_ or ''

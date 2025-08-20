@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.database import get_db
 from app.models import User, Communication
 from app.schema.communication import Communication as CommunicationSchema, CommunicationCreate, CommunicationUpdate, BulkSMSRequest
@@ -108,3 +108,11 @@ async def delete_communication(
     except Exception as e:
         service.db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting communication: {str(e)}")
+
+@router.get("/stats/sent-count", response_model=Dict[str, int])
+async def get_sent_count_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    service = CommunicationService(db)
+    return service.get_sent_count_stats()
