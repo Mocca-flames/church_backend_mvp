@@ -12,7 +12,7 @@ def main():
 
     # The details of the message we want to send
     my_data = {
-        "to": [ "+27817584591", "+27762122008" ],
+        "to": [ "+27817584591"],
         "body": "Hello World!",
         "encoding": "UNICODE",
         "longMessageMaxParts": "30",

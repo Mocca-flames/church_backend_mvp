@@ -113,14 +113,14 @@ class ContactService:
         db_contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
         if not db_contact:
             return None
-        
+
         update_data = contact_update.model_dump(exclude_unset=True)
-        
+
         # Handle phone number cleaning and validation if it's being updated
         if 'phone' in update_data and update_data['phone'] is not None:
             new_phone = self._clean_and_validate_phone(update_data['phone'])
             update_data['phone'] = new_phone
-            
+
             # Check for duplicate phone number if it's being changed to an existing one
             existing_contact_with_phone = self.db.query(Contact).filter(
                 Contact.phone == new_phone,
@@ -131,7 +131,43 @@ class ContactService:
 
         for key, value in update_data.items():
             setattr(db_contact, key, value)
-        
+
+        try:
+            self.db.add(db_contact)
+            self.db.commit()
+            self.db.refresh(db_contact)
+            return db_contact
+        except IntegrityError:
+            self.db.rollback()
+            raise ValueError(f"Update failed: Contact with phone number {update_data['phone']} already exists.")
+        except Exception as e:
+            self.db.rollback()
+            raise e
+
+    def update_contact_by_phone(self, phone: str, contact_update: ContactUpdate) -> Optional[Contact]:
+        """Update an existing contact by phone number"""
+        db_contact = self.db.query(Contact).filter(Contact.phone == phone).first()
+        if not db_contact:
+            return None
+
+        update_data = contact_update.model_dump(exclude_unset=True)
+
+        # Handle phone number cleaning and validation if it's being updated
+        if 'phone' in update_data and update_data['phone'] is not None:
+            new_phone = self._clean_and_validate_phone(update_data['phone'])
+            update_data['phone'] = new_phone
+
+            # Check for duplicate phone number if it's being changed to an existing one
+            existing_contact_with_phone = self.db.query(Contact).filter(
+                Contact.phone == new_phone,
+                Contact.id != db_contact.id
+            ).first()
+            if existing_contact_with_phone:
+                raise IntegrityError(f"Contact with phone number {new_phone} already exists.", {}, {})
+
+        for key, value in update_data.items():
+            setattr(db_contact, key, value)
+
         try:
             self.db.add(db_contact)
             self.db.commit()

@@ -8,10 +8,10 @@ import json
 from typing import List, Dict, Any
 
 # Configuration - copied from fetch_contacts.py
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://34.63.67.176:8000"
 LOGIN_EMAIL = "admin@thunder.com"
 LOGIN_PASSWORD = "admin@1234"
-PHONE_DATA_FILE = "phone_data_batch_2.json"
+PHONE_DATA_FILE = "phone_data_batch_1.json"
 CONTACTS_ADD_LIST_URL = f"{BASE_URL}/contacts/add-list"
 
 def login() -> str:

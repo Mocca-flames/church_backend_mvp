@@ -89,6 +89,51 @@ async def add_contacts_from_list(
         
     return result
 
+@router.put("/mass-update", response_model=List[Contact])
+async def mass_update_contacts(
+    contacts: List[Dict[str, Any]],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
+):
+    """
+    Update multiple contacts using phone numbers as identifiers.
+    Each contact in the list should have a 'phone' field and other fields to update.
+    """
+    service = ContactService(db)
+    updated_contacts = []
+    errors = []
+
+    for contact_data in contacts:
+        phone = contact_data.get('phone')
+        if not phone:
+            errors.append({"phone": None, "error": "Phone number is required"})
+            continue
+
+        # Create a ContactUpdate object from the contact data
+        try:
+            contact_update = ContactUpdate(**{k: v for k, v in contact_data.items() if k != 'phone'})
+        except Exception as e:
+            errors.append({"phone": phone, "error": f"Invalid data: {str(e)}"})
+            continue
+
+        try:
+            updated_contact = service.update_contact_by_phone(phone, contact_update)
+            if not updated_contact:
+                errors.append({"phone": phone, "error": "Contact not found"})
+            else:
+                updated_contacts.append(updated_contact)
+        except Exception as e:
+            errors.append({"phone": phone, "error": str(e)})
+
+    if errors:
+        return {
+            "success": False,
+            "updated_contacts": updated_contacts,
+            "errors": errors
+        }
+    else:
+        return updated_contacts
+
 @router.put("/{contact_id}", response_model=Contact)
 async def update_contact(
     contact_id: int,
