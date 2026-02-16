@@ -86,3 +86,10 @@ class Contact(ContactBase):
             return metadata.get('tags', [])
         except (json.JSONDecodeError, TypeError):
             return []
+        
+class TagRequest(BaseModel):
+    tags: List[str]
+
+class BulkTagRequest(BaseModel):
+    contact_ids: List[int]
+    tags: List[str]

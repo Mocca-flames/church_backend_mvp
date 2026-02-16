@@ -9,7 +9,7 @@ import time
 from typing import List, Dict, Any
 
 # Configuration
-BASE_URL = "https://37fe59d75381.ngrok-free.app"
+BASE_URL = "http://34.63.67.176:8000"
 LOGIN_EMAIL = "admin@thunder.com"
 LOGIN_PASSWORD = "admin@1234"
 INPUT_FILE = "extracted_contacts.json"

@@ -6,7 +6,7 @@ import io
 import re
 from app.database import get_db
 from app.models import User
-from app.schema.contact import Contact, ContactCreate, ContactUpdate, ContactImport
+from app.schema.contact import BulkTagRequest, Contact, ContactCreate, ContactUpdate, ContactImport, TagRequest
 from app.services.contact_service import ContactService
 from app.dependencies import get_current_active_user, get_current_contact_manager
 from pydantic import BaseModel
@@ -14,12 +14,7 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 # Pydantic models for tag operations
-class TagRequest(BaseModel):
-    tags: List[str]
 
-class BulkTagRequest(BaseModel):
-    contact_ids: List[int]
-    tags: List[str]
 
 @router.get("", response_model=List[Contact])
 async def get_contacts(

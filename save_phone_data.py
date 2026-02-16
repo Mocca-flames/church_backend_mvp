@@ -47,7 +47,7 @@ def fetch_contacts(access_token: str) -> List[Dict[str, Any]]:
     }
 
     params = {
-        "limit": 2000  # Fetch all 2000 contacts
+        "limit": 5000  # Fetch all 2000 contacts
     }
 
     try:

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, contacts, communications, stats
+from app.routers import auth, contacts, communications, stats, attendance, scenarios
 from app.database import engine
 from app.models import Base
 
@@ -24,6 +24,8 @@ app.include_router(auth.router)
 app.include_router(contacts.router)
 app.include_router(communications.router)
 app.include_router(stats.router)
+app.include_router(attendance.router)
+app.include_router(scenarios.router)
 
 @app.get("/")
 async def root():

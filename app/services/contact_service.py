@@ -1,13 +1,13 @@
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_
+from sqlalchemy.orm import Session # type: ignore
+from sqlalchemy.exc import IntegrityError # type: ignore
+from sqlalchemy import or_ # pyright: ignore[reportMissingImports]
 from app.models import Contact
 from app.schema.contact import ContactCreate, ContactUpdate
 from typing import List, Dict, Any, Optional
-import pandas as pd
+import pandas as pd # type: ignore
 import io
 import logging
-import vobject
+import vobject # pyright: ignore[reportMissingModuleSource]
 import json
 import re
 
@@ -180,7 +180,9 @@ class ContactService:
             self.db.rollback()
             raise e
 
-    def get_contacts(self, skip: int = 0, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, tags: Optional[List[str]] = None) -> List[Contact]:
+    def get_contacts(
+            self, skip: int = 0, limit: int = 100, search: Optional[str] = None, 
+            status: Optional[str] = None, tags: Optional[List[str]] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""
         query = self.db.query(Contact)
         
