@@ -9,7 +9,7 @@ import time
 from typing import List, Dict, Any
 
 # Configuration
-BASE_URL = "http://34.63.67.176:8000"
+BASE_URL = "http://192.168.8.103:8000"
 LOGIN_EMAIL = "admin@thunder.com"
 LOGIN_PASSWORD = "admin@1234"
 INPUT_FILE = "extracted_contacts.json"

@@ -4,6 +4,7 @@ from sqlalchemy import or_ # pyright: ignore[reportMissingImports]
 from app.models import Contact
 from app.schema.contact import ContactCreate, ContactUpdate
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 import pandas as pd # type: ignore
 import io
 import logging
@@ -181,8 +182,9 @@ class ContactService:
             raise e
 
     def get_contacts(
-            self, skip: int = 0, limit: int = 100, search: Optional[str] = None, 
-            status: Optional[str] = None, tags: Optional[List[str]] = None) -> List[Contact]:
+            self, skip: int = 0, limit: int = 9999999, search: Optional[str] = None, 
+            status: Optional[str] = None, tags: Optional[List[str]] = None,
+            created_after: Optional[datetime] = None, updated_after: Optional[datetime] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""
         query = self.db.query(Contact)
         
@@ -195,6 +197,14 @@ class ContactService:
             )
         if status:
             query = query.filter(Contact.status == status)
+        
+        # Filter by created_after
+        if created_after:
+            query = query.filter(Contact.created_at >= created_after)
+        
+        # Filter by updated_after
+        if updated_after:
+            query = query.filter(Contact.updated_at >= updated_after)
         
         contacts = query.offset(skip).limit(limit).all()
         

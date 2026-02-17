@@ -233,6 +233,8 @@ Returns a list of all contacts.
 - `search`: Optional. Search term for name or phone.
 - `status`: Optional. Filter by contact status (e.g., 'active', 'inactive', 'lead', 'customer').
 - `tags`: Optional. Filter contacts by tags (e.g., `?tags=lead&tags=customer`).
+- `created_after`: Optional. Filter contacts created after this datetime (ISO 8601 format, e.g., `2026-02-16T20:39:31Z`). Useful for incremental sync - only fetches contacts created after a specific date.
+- `updated_after`: Optional. Filter contacts updated after this datetime (ISO 8601 format, e.g., `2026-02-16T20:39:31Z`). Useful for fetching contacts that have been modified since the last sync.
 
 **Response:**
 

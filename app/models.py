@@ -29,6 +29,7 @@ class Contact(Base):
     opt_out_whatsapp = Column(Boolean, default=False)
     metadata_ = Column(Text) # Store JSON string for flexible data
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Communication(Base):
     __tablename__ = "communications"

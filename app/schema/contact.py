@@ -66,6 +66,7 @@ class ContactImport(BaseModel):
 class Contact(ContactBase):
     id: int
     created_at: datetime
+    updated_at: Optional[datetime] = None
     tags: Optional[List[str]] = []
     
     class Config:

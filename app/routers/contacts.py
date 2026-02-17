@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 import csv
 import io
 import re
@@ -19,15 +20,17 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 @router.get("", response_model=List[Contact])
 async def get_contacts(
     skip: int = 0,
-    limit: int = 1000,
+    limit: int = 9999999,
     search: Optional[str] = None,
     status: Optional[str] = None,
     tags: Optional[List[str]] = Query(None, description="Filter contacts by tags"),
+    created_after: Optional[datetime] = Query(None, description="Filter contacts created after this datetime (ISO 8601 format)"),
+    updated_after: Optional[datetime] = Query(None, description="Filter contacts updated after this datetime (ISO 8601 format)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
-    return service.get_contacts(skip=skip, limit=limit, search=search, status=status, tags=tags)
+    return service.get_contacts(skip=skip, limit=limit, search=search, status=status, tags=tags, created_after=created_after, updated_after=updated_after)
 
 @router.post("", response_model=Contact)
 async def create_contact(
