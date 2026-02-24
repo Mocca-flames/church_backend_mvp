@@ -446,10 +446,34 @@ class ContactService:
         """Import contacts from VCF content"""
         try:
             imported_count = 0
+            updated_count = 0
             failed_count = 0
             errors = []
 
-            for vcard in vobject.readComponents(vcf_content):
+            # Split VCF content into individual vCard strings and parse each one
+            # This allows us to skip malformed vCards gracefully
+            vcard_strings = vcf_content.split('BEGIN:VCARD')
+            
+            for vcard_str in vcard_strings:
+                if not vcard_str.strip():
+                    continue
+                
+                # Re-add the BEGIN:VCARD header that was removed by split
+                vcard_str = 'BEGIN:VCARD' + vcard_str
+                
+                try:
+                    # Try to parse this single vCard
+                    vcard_list = list(vobject.readComponents(vcard_str))
+                    if not vcard_list:
+                        continue
+                        
+                    vcard = vcard_list[0]
+                except Exception as e:
+                    # Skip malformed vCard and continue
+                    logger.warning(f"Skipping malformed vCard: {str(e)}")
+                    failed_count += 1
+                    continue
+
                 try:
                     # Phone number is essential, check for it first.
                     if not hasattr(vcard, 'tel_list') or not vcard.tel_list:
@@ -496,9 +520,35 @@ class ContactService:
                             imported_count += 1
                         
                         except IntegrityError:
-                            failed_count += 1
-                            errors.append(f"Contact with phone number {phone} already exists.")
+                            # Contact already exists - try to update name if provided
                             self.db.rollback()
+                            
+                            # Clean and validate the phone number
+                            try:
+                                cleaned_phone = self._clean_and_validate_phone(str(phone).strip())
+                            except ValueError:
+                                failed_count += 1
+                                errors.append(f"Invalid phone number format: {phone}")
+                                continue
+                            
+                            # Check if contact exists
+                            existing_contact = self.get_contact_by_phone(cleaned_phone)
+                            if existing_contact:
+                                # Only update name if a new name is provided and not empty
+                                if name and name.strip():
+                                    update_data = ContactUpdate(name=name.strip())
+                                    try:
+                                        self.update_contact_by_phone(cleaned_phone, update_data)
+                                        updated_count += 1
+                                    except Exception as update_error:
+                                        failed_count += 1
+                                        errors.append(f"Failed to update contact {cleaned_phone}: {str(update_error)}")
+                                else:
+                                    # Name not provided or empty - just skip (not an error)
+                                    updated_count += 1
+                            else:
+                                failed_count += 1
+                                errors.append(f"Contact with phone number {phone} already exists (unclear state).")
                         except ValueError as e:
                             failed_count += 1
                             errors.append(f"Error processing phone number {phone} for '{name or 'Unknown'}': {str(e)}")
@@ -521,6 +571,7 @@ class ContactService:
             return {
                 'success': True,
                 'imported_count': imported_count,
+                'updated_count': updated_count,
                 'failed_count': failed_count,
                 'errors': errors[:10]
             }
