@@ -119,3 +119,44 @@ dmypy.json
 
 # Personal files
 Contacts.vcf
+
+# Sensitive data - phone contacts
+phone_data.json
+kanana_phone.json
+kanana_phone.txt
+majaneng_phone.json
+majaneng_phone.txt
+new_phone.json
+extracted_contacts.json
+
+# Backup folders with sensitive data
+backup_phone/
+contacts_txt/
+
+# Scripts with sensitive data
+analyze_bulksms.py
+extract_kanana_phones_script.py
+extract_kanana_phones.py
+extracted_from_vcf.py
+fetch_contacts.py
+bulk_add_contacts.py
+mass_update_contacs.py
+process_contacts.py
+save_phone_data.py
+test_mass_update.py
+update_contacts.py
+
+# Documentation with sensitive info
+endpoints.md
+plan_mvp.md
+extension_plan.md
+attendance_endpoints.md
+
+# Other sensitive files
+allacts.vcf
+africa.py
+bridge.py
+
+# SMS service files with credentials
+bulksms.py
+clicktel.py

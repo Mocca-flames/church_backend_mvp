@@ -182,7 +182,7 @@ class ContactService:
             raise e
 
     def get_contacts(
-            self, skip: int = 0, limit: int = 9999999, search: Optional[str] = None, 
+            self, skip: int = 0, limit: int = 500, search: Optional[str] = None, 
             status: Optional[str] = None, tags: Optional[List[str]] = None,
             created_after: Optional[datetime] = None, updated_after: Optional[datetime] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""

@@ -20,7 +20,7 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 @router.get("", response_model=List[Contact])
 async def get_contacts(
     skip: int = 0,
-    limit: int = 9999999,
+    limit: int = 500,
     search: Optional[str] = None,
     status: Optional[str] = None,
     tags: Optional[List[str]] = Query(None, description="Filter contacts by tags"),
