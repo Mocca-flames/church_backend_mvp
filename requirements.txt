@@ -15,4 +15,5 @@ vobject==0.9.6.1
 pydantic[email]==2.5.2
 requests==2.31.0
 africastalking==1.2.9
+reportlab==4.0.9
 
