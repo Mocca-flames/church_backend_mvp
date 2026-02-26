@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Dict, Any
 import json
 
-from reportlab.lib import colors
+from reportlab.lib import colors # type: ignore
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -100,13 +100,19 @@ def generate_attendance_pdf(attendances: List[Any]) -> bytes:
     Returns:
         PDF bytes
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Extract data from attendances
     data = []
     for att in attendances:
         contact = att.contact
         
+        logger.warning(f"[PDF EXPORT] Processing attendance ID={att.id}, contact={contact}")
+        
         # Get tags from contact
         tags = get_contact_tags(contact)
+        logger.warning(f"[PDF EXPORT] Contact ID={getattr(contact, 'id', None)} tags={tags}")
         
         # Extract location (excluding 'member')
         location = extract_location_from_tags(tags)
@@ -119,6 +125,8 @@ def generate_attendance_pdf(attendances: List[Any]) -> bytes:
         
         # Format phone number for display
         display_phone = format_phone_for_display(contact.phone)
+        
+        logger.warning(f"[PDF EXPORT] Row: name={name}, location={location}, phone={display_phone}, member={member}")
         
         data.append({
             'name': name,

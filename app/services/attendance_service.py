@@ -1,23 +1,72 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
-from app.models import Attendance
+from app.models import Attendance, Contact
 from app.schema.attendance import AttendanceCreate
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
+import logging
+import re
+
+logger = logging.getLogger(__name__)
 
 
 class AttendanceService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _get_or_create_contact(self, phone: str) -> Contact:
+        """
+        Get existing contact by phone number, or create a new one if not found.
+        This handles the case where mobile apps send local contact IDs that don't
+        match the server's auto-generated IDs.
+        """
+        # First try to find contact by phone
+        contact = self.db.query(Contact).filter(Contact.phone == phone).first()
+        
+        if contact:
+            return contact
+        
+        # If not found, create a new contact
+        # Clean and validate phone number first
+        try:
+            # Clean phone number
+            digits_only = re.sub(r'\D', '', phone)
+            if phone.startswith('0') and len(digits_only) == 10:
+                cleaned_phone = '+27' + digits_only[1:]
+            elif phone.startswith('27') and len(digits_only) == 11:
+                cleaned_phone = '+' + digits_only
+            elif phone.startswith('+27') and len(digits_only) == 11:
+                cleaned_phone = phone
+            else:
+                cleaned_phone = phone  # Keep original if format is unknown
+            
+            contact = Contact(
+                name=cleaned_phone,
+                phone=cleaned_phone,
+                status='active'
+            )
+            self.db.add(contact)
+            self.db.commit()
+            self.db.refresh(contact)
+            logger.info(f"Auto-created contact {contact.id} for phone {phone}")
+            return contact
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Failed to create contact for phone {phone}: {e}")
+            raise ValueError(f"Could not find or create contact with phone {phone}")
+
     def record_attendance(self, attendance: AttendanceCreate) -> Attendance:
         """Record attendance for a contact"""
+        # Get or create contact by phone number (handles mobile app local IDs)
+        contact = self._get_or_create_contact(attendance.phone)
+        contact_id = contact.id
+        
         # Check if already checked in today for this service
         service_date_only = attendance.service_date.date()
         
         existing = self.db.query(Attendance).filter(
             and_(
-                Attendance.contact_id == attendance.contact_id,
+                Attendance.contact_id == contact_id,
                 Attendance.service_type == attendance.service_type,
                 func.date(Attendance.service_date) == service_date_only
             )
@@ -29,7 +78,7 @@ class AttendanceService:
             )
         
         db_attendance = Attendance(
-            contact_id=attendance.contact_id,
+            contact_id=contact_id,
             phone=attendance.phone,
             service_type=attendance.service_type,
             service_date=attendance.service_date,
