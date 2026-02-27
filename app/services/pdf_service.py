@@ -1,218 +1,282 @@
 import io
+import os
 from datetime import datetime
 from typing import List, Dict, Any
 import json
 
-from reportlab.lib import colors # type: ignore
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.units import inch, mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+
+
+# ── Brand Palette ────────────────────────────────────────────────────────────
+NAVY        = colors.HexColor('#1A2B4A')   # deep navy  – headers / accents
+GOLD        = colors.HexColor('#C9A84C')   # warm gold  – accent stripe
+LIGHT_BLUE  = colors.HexColor('#EAF0F8')   # pale blue  – alternating row
+WHITE       = colors.white
+GREY_TEXT   = colors.HexColor('#4A4A4A')
+BORDER      = colors.HexColor('#C5CDD8')
+# ─────────────────────────────────────────────────────────────────────────────
+
+PAGE_W, PAGE_H = A4
+MARGIN = 18 * mm   # breathing room on each side
+TABLE_W = PAGE_W - 2 * MARGIN
 
 
 def extract_location_from_tags(tags: List[str]) -> str:
-    """Extract location from tags, excluding 'member' tag.
-    
-    Valid locations: kanana, majaneng, mashemong, soshanguve, kekana
-    """
     valid_locations = {'kanana', 'majaneng', 'mashemong', 'soshanguve', 'kekana'}
-    
     if not tags:
         return ''
-    
     for tag in tags:
         if tag.lower() in valid_locations:
             return tag.capitalize()
-    
     return ''
 
 
 def is_member(tags: List[str]) -> bool:
-    """Check if tags contain 'member'"""
     if not tags:
         return False
     return 'member' in [tag.lower() for tag in tags]
 
 
 def get_contact_tags(contact) -> List[str]:
-    """Extract tags from contact model.
-    
-    Handles both the Contact schema (which has tags attribute) 
-    and raw SQLAlchemy models (which have metadata_).
-    """
-    # If contact has tags attribute (from schema)
     if hasattr(contact, 'tags') and contact.tags:
         return contact.tags
-    
-    # If contact has metadata_ (raw SQLAlchemy model)
     if hasattr(contact, 'metadata_') and contact.metadata_:
         try:
             metadata = json.loads(contact.metadata_)
             return metadata.get('tags', [])
         except (json.JSONDecodeError, TypeError):
             return []
-    
     return []
 
 
 def format_phone_for_display(phone: str) -> str:
-    """Format phone number for human-readable display.
-    
-    Converts +27XXXXXXXXX to 0XX XXX XXXX format.
-    Examples:
-        +27712345678 -> 071 234 5678
-        +27811234567 -> 081 123 4567
-    """
     if not phone:
         return ''
-    
-    # Remove any whitespace
     phone = phone.strip()
-    
-    # Remove +27 prefix if present (South African format)
     if phone.startswith('+27'):
-        phone = phone[3:]  # Remove +27
-    # Remove 27 prefix if present
+        phone = phone[3:]
     elif phone.startswith('27') and len(phone) > 10:
         phone = phone[2:]
-    
-    # Now we should have a 9-digit number starting with 7, 8, or 9
-    # Add leading 0 and format with spaces
     if len(phone) == 9 and phone[0] in ['7', '8', '9']:
-        # Format as 0XX XXX XXXX (add 0 prefix)
         return f"0{phone[:2]} {phone[2:5]} {phone[5:]}"
-    
-    # If already has leading 0, format with spaces
     if phone.startswith('0') and len(phone) >= 10:
-        # Format as 0XX XXX XXXX
         return f"{phone[:3]} {phone[3:6]} {phone[6:]}"
-    
-    # Return original if we can't format it
     return phone
 
 
-def generate_attendance_pdf(attendances: List[Any]) -> bytes:
-    """Generate PDF with attendance data.
-    
-    Args:
-        attendances: List of Attendance objects with contact relationship
+# ── Custom canvas for header/footer on every page ────────────────────────────
+def _make_page_decorator(logo_path: str | None, total_records: int, date_str: str = None, service_type_str: str = None):
+    """Returns an onFirstPage / onLaterPages callable."""
+
+    def draw_page(canvas, doc):
+        canvas.saveState()
+        w, h = A4
+
+        # ── Top accent bar (gold stripe) ──────────────────────────────────
+        bar_h = 5
+        canvas.setFillColor(GOLD)
+        canvas.rect(0, h - bar_h, w, bar_h, fill=1, stroke=0)
+
+        # ── Header area ───────────────────────────────────────────────────
+        header_top = h - bar_h
+        header_bottom = h - 32 * mm
+
+        canvas.setFillColor(NAVY)
+        canvas.rect(0, header_bottom, w, header_top - header_bottom, fill=1, stroke=0)
+
+        # Logo (left side)
+        if logo_path and os.path.exists(logo_path):
+            try:
+                logo_w = 42 * mm
+                logo_h = 22 * mm
+                canvas.drawImage(
+                    logo_path,
+                    MARGIN, header_bottom + (header_top - header_bottom - logo_h) / 2,
+                    width=logo_w, height=logo_h,
+                    preserveAspectRatio=True, mask='auto'
+                )
+            except Exception:
+                pass  # Logo failed gracefully
+
+        # Title text (right side of header)
+        canvas.setFillColor(WHITE)
+        canvas.setFont('Helvetica-Bold', 18)
+        canvas.drawRightString(w - MARGIN, header_bottom + 22 * mm, "Fountain of Prayer Ministries Attendance")
+
+        # Date and Service Type (below title, on right side)
+        canvas.setFillColor(GOLD)
+        canvas.setFont('Helvetica', 10)
         
+        # Build the header info string
+        if date_str and service_type_str:
+            header_info = f"{date_str} | {service_type_str}"
+        elif date_str:
+            header_info = date_str
+        elif service_type_str:
+            header_info = service_type_str
+        else:
+            # Default: current date
+            header_info = datetime.now().strftime('%d %B %Y')
+        
+        canvas.drawRightString(w - MARGIN, header_bottom + 14 * mm, header_info)
+
+        # ── Thin gold rule below header ───────────────────────────────────
+        canvas.setStrokeColor(GOLD)
+        canvas.setLineWidth(1.5)
+        canvas.line(MARGIN, header_bottom - 2 * mm, w - MARGIN, header_bottom - 2 * mm)
+
+        # ── Footer ────────────────────────────────────────────────────────
+        footer_y = 10 * mm
+        canvas.setStrokeColor(BORDER)
+        canvas.setLineWidth(0.5)
+        canvas.line(MARGIN, footer_y + 5 * mm, w - MARGIN, footer_y + 5 * mm)
+
+        canvas.setFillColor(GREY_TEXT)
+        canvas.setFont('Helvetica', 8)
+        canvas.drawString(MARGIN, footer_y, f"Total Records: {total_records}")
+        canvas.drawRightString(
+            w - MARGIN, footer_y,
+            f"Page {doc.page}"
+        )
+
+        canvas.restoreState()
+
+    return draw_page
+
+
+def generate_attendance_pdf(
+    attendances: List[Any],
+    logo_path: str = "assets/logo.png",   # ← point this at your actual logo file
+    date_str: str = None,
+    service_type_str: str = None
+) -> bytes:
+    """Generate a polished attendance PDF.
+
+    Args:
+        attendances : List of Attendance ORM objects with .contact relationship.
+        logo_path   : Path to logo.png (absolute or relative to cwd).
+        date_str    : Date string for header (e.g., "21 February 2026" or "21 February 2026 - 26 March 2026")
+        service_type_str : Service type string for header (e.g., "Sunday Service" or "Sunday Services only")
+
     Returns:
-        PDF bytes
+        PDF bytes.
     """
     import logging
     logger = logging.getLogger(__name__)
-    
-    # Extract data from attendances
+
+    # ── Collect row data ──────────────────────────────────────────────────────
     data = []
     for att in attendances:
         contact = att.contact
-        
-        logger.warning(f"[PDF EXPORT] Processing attendance ID={att.id}, contact={contact}")
-        
-        # Get tags from contact
-        tags = get_contact_tags(contact)
-        logger.warning(f"[PDF EXPORT] Contact ID={getattr(contact, 'id', None)} tags={tags}")
-        
-        # Extract location (excluding 'member')
+        tags    = get_contact_tags(contact)
         location = extract_location_from_tags(tags)
-        
-        # Check if member
-        member = 'Yes' if is_member(tags) else 'No'
-        
-        # Get name (fallback to phone if name is None)
-        name = contact.name if contact.name else contact.phone
-        
-        # Format phone number for display
-        display_phone = format_phone_for_display(contact.phone)
-        
-        logger.warning(f"[PDF EXPORT] Row: name={name}, location={location}, phone={display_phone}, member={member}")
-        
+        member   = 'Yes' if is_member(tags) else 'No'
+        name     = contact.name if contact.name else contact.phone
+        phone    = format_phone_for_display(contact.phone)
+
+        logger.debug(f"[PDF] name={name} location={location} phone={phone} member={member}")
         data.append({
             'name': name,
             'location': location or 'N/A',
-            'phone': display_phone,
+            'phone': phone,
             'member': member
         })
-    
-    # Create PDF document
+
+    total = len(data)
+
+    # ── Build PDF ─────────────────────────────────────────────────────────────
     buffer = io.BytesIO()
+
+    # Top margin must clear the custom header (≈52 mm) + rule (2 mm) + gap
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=30,
-        leftMargin=30,
-        topMargin=30,
-        bottomMargin=30
+        leftMargin=MARGIN,
+        rightMargin=MARGIN,
+        topMargin=36 * mm,    # clears the painted header
+        bottomMargin=22 * mm, # clears the painted footer
     )
-    elements = []
-    
-    # Get styles
-    styles = getSampleStyleSheet()
-    
-    # Custom title style
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Title'],
-        fontSize=18,
-        spaceAfter=12,
+
+    page_fn = _make_page_decorator(logo_path, total, date_str, service_type_str)
+
+    styles  = getSampleStyleSheet()
+
+    # ── Table ─────────────────────────────────────────────────────────────────
+    col_widths = [
+        TABLE_W * 0.35,   # Name
+        TABLE_W * 0.22,   # Location
+        TABLE_W * 0.28,   # Phone
+        TABLE_W * 0.15,   # Member
+    ]
+
+    header_para_style = ParagraphStyle(
+        'TH',
+        fontName='Helvetica-Bold',
+        fontSize=12,
+        textColor=WHITE,
+        leading=14,
     )
-    
-    # Add title
-    elements.append(Paragraph("Church Attendance Report", title_style))
-    
-    # Add generation date
-    elements.append(Paragraph(
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        styles['Normal']
-    ))
-    elements.append(Spacer(1, 20))
-    
-    # Create table data (with header)
-    table_data = [['Name', 'Location', 'Phone', 'Member']]
+    cell_style = ParagraphStyle(
+        'TD',
+        fontName='Helvetica',
+        fontSize=12,
+        textColor=GREY_TEXT,
+        leading=15,
+    )
+
+    headers = ['Name', 'Location', 'Phone', 'Member']
+    table_data = [[Paragraph(h, header_para_style) for h in headers]]
+
     for row in data:
         table_data.append([
-            row['name'],
-            row['location'],
-            row['phone'],
-            row['member']
+            Paragraph(row['name'],     cell_style),
+            Paragraph(row['location'], cell_style),
+            Paragraph(row['phone'],    cell_style),
+            Paragraph(row['member'],   cell_style),
         ])
-    
-    # Create and style table
-    table = Table(table_data, repeatRows=1)
-    table.setStyle(TableStyle([
-        # Header row styling
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('TOPPADDING', (0, 0), (-1, 0), 12),
-        
-        # Data rows styling
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ECF0F1')),
-        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
-        ('TOPPADDING', (0, 1), (-1, -1), 10),
-        
-        # Grid
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ECF0F1'), colors.white]),
+
+    tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        # ── Header ────────────────────────────────────────────────────────
+        ('BACKGROUND',    (0, 0), (-1, 0),  NAVY),
+        ('TOPPADDING',    (0, 0), (-1, 0),  10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0),  10),
+        ('LEFTPADDING',   (0, 0), (-1, 0),  10),
+        ('RIGHTPADDING',  (0, 0), (-1, 0),  10),
+
+        # Left border accent on header
+        ('LINEAFTER',     (0, 0), (0, 0),   1.5, GOLD),
+
+        # ── Data rows ─────────────────────────────────────────────────────
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_BLUE]),
+        ('TOPPADDING',    (0, 1), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 9),
+        ('LEFTPADDING',   (0, 1), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 1), (-1, -1), 10),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+
+        # ── Grid ──────────────────────────────────────────────────────────
+        ('GRID',          (0, 0), (-1, -1), 0.4, BORDER),
+        ('LINEBELOW',     (0, 0), (-1, 0),  1.5, GOLD),   # gold rule under header
+
+        # ── "Member" column – colour-coded text via per-cell override ─────
+        # (done via Python loop below)
     ]))
-    
-    elements.append(table)
-    
-    # Add summary
-    elements.append(Spacer(1, 20))
-    elements.append(Paragraph(
-        f"Total Records: {len(data)}",
-        styles['Normal']
-    ))
-    
-    # Build PDF
-    doc.build(elements)
-    
+
+    # Colour-code the Member column
+    for i, row in enumerate(data, start=1):
+        color = colors.HexColor('#1E7B4B') if row['member'] == 'Yes' else colors.HexColor('#B03A2E')
+        tbl.setStyle(TableStyle([
+            ('TEXTCOLOR', (3, i), (3, i), color),
+            ('FONTNAME',  (3, i), (3, i), 'Helvetica-Bold'),
+        ]))
+
+    elements = [tbl]
+
+    doc.build(elements, onFirstPage=page_fn, onLaterPages=page_fn)
     return buffer.getvalue()

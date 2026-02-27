@@ -171,7 +171,32 @@ async def export_attendance_pdf(
         logger.warning(f"[ATTENDANCE EXPORT] Record ID={att.id}, service_date={att.service_date}, tzinfo={att.service_date.tzinfo if att.service_date else None}")
     
     # Generate PDF
-    pdf_bytes = generate_attendance_pdf(attendances)
+    # Format date string for PDF header
+    if date:
+        # Single date: "21 February 2026"
+        target_date = date
+        date_str = target_date.strftime('%d %B %Y')
+    elif date_from_sast and date_to_sast:
+        # Range: "21 February 2026 - 26 March 2026"
+        date_str = f"{date_from_sast.strftime('%d %B %Y')} - {date_to_sast.strftime('%d %B %Y')}"
+    else:
+        date_str = None
+    
+    # Format service type string for PDF header
+    # Single date: "Sunday Service" | Range: "Sunday Services only"
+    if service_type:
+        if date:
+            # Single date: "Sunday Service"
+            service_type_str = f"{service_type} Service"
+        else:
+            # Range: "Sunday Services only"
+            service_type_str = f"{service_type} Services only"
+    else:
+        service_type_str = "All Services"
+    
+    logger.warning(f"[ATTENDANCE EXPORT] PDF Header: date_str={date_str}, service_type_str={service_type_str}")
+    
+    pdf_bytes = generate_attendance_pdf(attendances, date_str=date_str, service_type_str=service_type_str)
     
     # Generate filename with current date
     filename = f"attendance_export_{date.today()}.pdf"

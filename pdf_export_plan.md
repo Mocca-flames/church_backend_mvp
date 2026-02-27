@@ -1,9 +1,11 @@
-# Attendance PDF Export Feature Plan
+# Attendance PDF Export Feature Plan - Updated
 
 ## Overview
 This document outlines the implementation plan for adding a PDF export feature to the Church Attendance app. The feature allows users to download attendance records as a PDF file.
 
-## PDF Columns
+## PDF Requirements
+
+### PDF Columns
 | Column | Source | Description |
 |--------|--------|-------------|
 | Name | `contact.name` or `contact.phone` | Contact's display name |
@@ -11,9 +13,16 @@ This document outlines the implementation plan for adding a PDF export feature t
 | Phone | `contact.phone` | Contact's phone number |
 | Member | `contact.tags` contains 'member' | Yes/No |
 
+### PDF Header Format
+The PDF header should display the date range and service type filter:
+- **Single Date (no range)**: Shows specific date + service type
+  - Example: `Date: 21 February 2026` | `Service Type: Sunday Service`
+- **Date Range**: Shows date range + service type filter
+  - Example: `Date: 21 February 2026 - 26 March 2026` | `Service Type: Sunday Services only`
+
 ---
 
-## Part 1: Server-Side Implementation (`/attendance/export`)
+## Part 1: Server-Side Implementation (You Will Handle)
 
 ### Endpoint Specification
 
@@ -24,13 +33,35 @@ GET /attendance/export
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `date_from` | ISO8601 datetime | No | Start of date range |
-| `date_to` | ISO8601 datetime | No | End of date range |
-| `service_type` | string | No | Filter by service type (Sunday, Tuesday, etc.) |
+| `date` | string | No | Single date in YYYY-MM-DD format (for single day export) |
+| `date_from` | ISO8601 datetime | No | Start of date range (when not using single date) |
+| `date_to` | ISO8601 datetime | No | End of date range (when not using single date) |
+| `service_type` | string | No | Filter by service type (Sunday, Tuesday, Special Event) |
 
 **Response:**
 - `Content-Type`: `application/pdf`
 - `Content-Disposition`: `attachment; filename="attendance_export_YYYY-MM-DD.pdf"`
+
+### Server Implementation Notes
+
+1. **Date Handling**:
+   - If `date` parameter is provided → Use it as single date (filter attendance for that specific day)
+   - If `date_from` and `date_to` are provided → Use as date range
+
+2. **Service Type in PDF Header**:
+   - If `service_type` is provided → Show "Service Type: {Service Type} only" in header
+   - If no service_type → Show "Service Type: All Services"
+
+3. **Example PDF Header Output**:
+   ```
+   Attendance Export
+   Date: 21 February 2026 | Service Type: Sunday Service
+   
+   OR
+   
+   Attendance Export  
+   Date: 21 February 2026 - 26 March 2026 | Service Type: Sunday Services only
+   ```
 
 ### Recommended Server Structure (Python/FastAPI)
 
@@ -39,6 +70,7 @@ GET /attendance/export
 
 @router.get("/export")
 async def export_attendance_pdf(
+    date: Optional[str] = None,  # Single date: YYYY-MM-DD
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     service_type: Optional[str] = None,
@@ -47,16 +79,46 @@ async def export_attendance_pdf(
     """
     Export attendance records as PDF.
     
-    Columns: Name, Location, Phone, Member
+    Query params:
+    - date: Single date in YYYY-MM-DD format
+    - date_from: Start date for range
+    - date_to: End date for range  
+    - service_type: Filter by service type
+    
+    PDF Header shows:
+    - Date: single date OR "from - to" range
+    - Service Type: specific type or "All Services"
     """
-    # 1. Query attendance records with contact info
+    
+    # 1. Determine date filter
+    if date:
+        # Single date - parse YYYY-MM-DD
+        target_date = datetime.strptime(date, '%Y-%m-%d').date()
+        date_from = datetime.combine(target_date, datetime.min.time())
+        date_to = datetime.combine(target_date, datetime.max.time())
+    
+    # 2. Query attendance records with contact info
     attendances = await get_attendances_with_contacts(
         date_from=date_from,
         date_to=date_to,
         service_type=service_type
     )
     
-    # 2. Extract contact data
+    # 3. Format date string for PDF header
+    if date:
+        # Single date: "21 February 2026"
+        date_str = target_date.strftime('%d %B %Y')
+    else:
+        # Range: "21 February 2026 - 26 March 2026"
+        date_str = f"{date_from.strftime('%d %B %Y')} - {date_to.strftime('%d %B %Y')}"
+    
+    # 4. Format service type for PDF header
+    if service_type:
+        service_type_str = f"{service_type} Services only"
+    else:
+        service_type_str = "All Services"
+    
+    # 5. Extract contact data
     data = []
     for att in attendances:
         contact = att.contact
@@ -70,10 +132,14 @@ async def export_attendance_pdf(
             'member': 'Yes' if is_member else 'No'
         })
     
-    # 3. Generate PDF
-    pdf_bytes = generate_attendance_pdf(data)
+    # 6. Generate PDF with custom header
+    pdf_bytes = generate_attendance_pdf(
+        data,
+        date_str=date_str,
+        service_type_str=service_type_str
+    )
     
-    # 4. Return file
+    # 7. Return file
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -83,7 +149,7 @@ async def export_attendance_pdf(
     )
 ```
 
-### PDF Generation Helper (Example)
+### PDF Generation Helper with Custom Header
 
 ```python
 # app/services/pdf_service.py
@@ -91,20 +157,25 @@ async def export_attendance_pdf(
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
-def generate_attendance_pdf(data: List[dict]) -> bytes:
-    """Generate PDF with attendance data."""
+def generate_attendance_pdf(data: List[dict], date_str: str, service_type_str: str) -> bytes:
+    """Generate PDF with attendance data and custom header."""
     
     # Create PDF document
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
     
-    # Add title
     styles = getSampleStyleSheet()
+    
+    # Add title
     elements.append(Paragraph("Attendance Export", styles['Title']))
-    elements.append(Paragraph(f"Generated: {datetime.now()}", styles['Normal']))
+    
+    # Add date and service type in header line
+    header_text = f"Date: {date_str} | Service Type: {service_type_str}"
+    elements.append(Paragraph(header_text, styles['Normal']))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
     elements.append(Spacer(1, 12))
     
     # Create table data (with header)
@@ -138,158 +209,44 @@ def generate_attendance_pdf(data: List[dict]) -> bytes:
 
 ---
 
-## Part 2: Client-Side Implementation (Flutter)
+## Part 2: Mobile Client Implementation (Already Complete ✓)
 
-### 2.1 Add Endpoint Constant
+The Flutter mobile client has already been implemented with the following components:
 
-**File:** [`lib/core/network/api_constants.dart`](lib/core/network/api_constants.dart)
+### 2.1 API Constants
+**File:** [`lib/core/network/api_constants.dart`](lib/core/network/api_constants.dart:37)
+- Already has: `attendanceExport = '/attendance/export'`
 
-```dart
-// Add after existing attendance endpoints (line ~36)
-static const String attendanceExport = '/attendance/export';
-```
+### 2.2 Remote DataSource
+**File:** [`lib/features/attendance/data/datasources/attendance_remote_datasource.dart`](lib/features/attendance/data/datasources/attendance_remote_datasource.dart:240)
+- Already has `downloadAttendancePdf()` method that sends:
+  - `date` parameter for single date (YYYY-MM-DD format)
+  - `date_from` and `date_to` for date range
+  - `service_type` for filtering
 
-### 2.2 Add PDF Download Method to DioClient
+### 2.3 Repository Interface & Implementation
+**Files:** 
+- [`lib/features/attendance/domain/repositories/attendance_repository.dart`](lib/features/attendance/domain/repositories/attendance_repository.dart:131)
+- [`lib/features/attendance/data/repositories/attendance_repository_impl.dart`](lib/features/attendance/data/repositories/attendance_repository_impl.dart:383)
 
-**File:** [`lib/core/network/dio_client.dart`](lib/core/network/dio_client.dart)
+- Already has `downloadAttendancePdf()` method in interface and implementation
 
-Add a new method to download the PDF:
+### 2.4 Provider (History Screen)
+**File:** [`lib/features/attendance/presentation/providers/attendance_history_provider.dart`](lib/features/attendance/presentation/providers/attendance_history_provider.dart:128)
 
-```dart
-/// GET /attendance/export
-/// Downloads attendance PDF with optional filters.
-Future<Response> downloadAttendancePdf({
-  String? dateFrom,
-  String? dateTo,
-  String? serviceType,
-}) async {
-  final queryParams = <String, dynamic>{};
-  if (dateFrom != null) queryParams['date_from'] = dateFrom;
-  if (dateTo != null) queryParams['date_to'] = dateTo;
-  if (serviceType != null) queryParams['service_type'] = serviceType;
+- Already has `downloadPdf()` method that:
+  - Detects single day vs range using `_isSameDay()`
+  - Sends `date` parameter for single day
+  - Sends `date_from`/`date_to` for range
+  - Sends `service_type` filter
+  - Saves and shares the PDF
 
-  return get(
-    ApiConstants.attendanceExport,
-    queryParameters: queryParams,
-    options: Options(
-      responseType: ResponseType.bytes,
-      contentType: 'application/pdf',
-    ),
-  );
-}
-```
+### 2.5 UI - Download Button
+**File:** [`lib/features/attendance/presentation/screens/attendance_history_screen.dart`](lib/features/attendance/presentation/screens/attendance_history_screen.dart:136)
 
-### 2.3 Add Method to AttendanceRemoteDataSource
-
-**File:** [`lib/features/attendance/data/datasources/attendance_remote_datasource.dart`](lib/features/attendance/data/datasources/attendance_remote_datasource.dart)
-
-```dart
-/// Downloads attendance PDF from server.
-Future<Uint8List> downloadAttendancePdf({
-  DateTime? dateFrom,
-  DateTime? dateTo,
-  ServiceType? serviceType,
-}) async {
-  try {
-    final queryParams = <String, dynamic>{};
-    
-    if (dateFrom != null) {
-      queryParams['date_from'] = dateFrom.toUtc().toIso8601String();
-    }
-    if (dateTo != null) {
-      queryParams['date_to'] = dateTo.toUtc().toIso8601String();
-    }
-    if (serviceType != null) {
-      queryParams['service_type'] = serviceType.backendValue;
-    }
-
-    final response = await _dioClient.dio.get(
-      ApiConstants.attendanceExport,
-      queryParameters: queryParams,
-      options: Options(
-        responseType: ResponseType.bytes,
-      ),
-    );
-
-    return Uint8List.fromList(response.data);
-  } on DioException catch (e) {
-    if (e.type == DioExceptionType.connectionError ||
-        e.type == DioExceptionType.unknown) {
-      throw const AttendanceRemoteException(
-        'Network error',
-        isNetworkError: true,
-      );
-    }
-    rethrow;
-  }
-}
-```
-
-### 2.4 Add Repository Method
-
-**File:** [`lib/features/attendance/domain/repositories/attendance_repository.dart`](lib/features/attendance/domain/repositories/attendance_repository.dart)
-
-```dart
-/// Downloads attendance PDF from server.
-Future<Uint8List> downloadAttendancePdf({
-  DateTime? dateFrom,
-  DateTime? dateTo,
-  ServiceType? serviceType,
-});
-```
-
-### 2.5 Add Download Button to AttendanceHistoryScreen
-
-**File:** [`lib/features/attendance/presentation/screens/attendance_history_screen.dart`](lib/features/attendance/presentation/screens/attendance_history_screen.dart)
-
-Add to the AppBar actions:
-
-```dart
-IconButton(
-  icon: const Icon(Icons.download),
-  onPressed: _downloadPdf,
-  tooltip: 'Export to PDF',
-),
-```
-
-Add the download method:
-
-```dart
-Future<void> _downloadPdf() async {
-  setState(() => _isLoading = true);
-  
-  try {
-    final remoteDataSource = ref.read(attendanceRemoteDataSourceProvider);
-    final pdfBytes = await remoteDataSource.downloadAttendancePdf(
-      dateFrom: _dateFrom,
-      dateTo: _dateTo,
-      serviceType: _selectedServiceType,
-    );
-    
-    // Save to downloads folder
-    final directory = await getExternalStorageDirectory();
-    final file = File('${directory?.path}/attendance_export_${DateTime.now().millisecondsSinceEpoch}.pdf');
-    await file.writeAsBytes(pdfBytes);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF saved to: ${file.path}')),
-      );
-    }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error downloading PDF: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  } finally {
-    setState(() => _isLoading = false);
-  }
-}
-```
+- Already has download button in AppBar with:
+  - Loading indicator while downloading
+  - Calls `ref.read(attendanceHistoryProvider.notifier).downloadPdf()`
 
 ---
 
@@ -297,33 +254,51 @@ Future<void> _downloadPdf() async {
 
 ```mermaid
 graph TD
-    A[User taps Download PDF] --> B[Flutter calls /attendance/export]
-    B --> C{Server Available?}
-    C -->|Yes| D[Server generates PDF]
-    C -->|No| E[Show error message]
-    D --> F[Return PDF bytes]
-    F --> G[Flutter saves to storage]
-    G --> H[Show success message]
+    A[User taps Download PDF] --> B{Is single day selected?}
+    B -->|Yes| C[Send date=YYYY-MM-DD]
+    B -->|No| D[Send date_from & date_to]
+    C --> E[Also send service_type if selected]
+    D --> E
+    E --> F[Flutter calls /attendance/export]
+    F --> G{Server Available?}
+    G -->|Yes| H[Server generates PDF with header]
+    G -->|No| I[Show error message]
+    H --> J[Return PDF bytes]
+    J --> K[Flutter saves to storage]
+    K --> L[Share PDF file]
 ```
 
 ---
 
-## Summary of Files to Modify
+## Summary
 
+### Mobile Client (Complete ✓)
+All Flutter code is already implemented. The client:
+1. Sends `date` parameter for single day exports
+2. Sends `date_from` and `date_to` for range exports  
+3. Sends `service_type` filter when selected
+4. Handles the PDF download, save, and share
+
+### Server (Your Task)
+The server needs to:
+1. Accept the `date` parameter (YYYY-MM-DD format) for single date
+2. Accept `date_from` and `date_to` for date range
+3. Accept `service_type` for filtering
+4. Generate PDF with header showing:
+   - Date: single date OR "from - to" range
+   - Service Type: specific type + "only" OR "All Services"
+
+### Files to Modify (Server)
 | File | Change |
 |------|--------|
-| `lib/core/network/api_constants.dart` | Add `attendanceExport` constant |
-| `lib/core/network/dio_client.dart` | Add `downloadAttendancePdf()` method |
-| `lib/features/attendance/data/datasources/attendance_remote_datasource.dart` | Add PDF download method |
-| `lib/features/attendance/domain/repositories/attendance_repository.dart` | Add repository interface |
-| `lib/features/attendance/data/repositories/attendance_repository_impl.dart` | Implement repository method |
-| `lib/features/attendance/presentation/screens/attendance_history_screen.dart` | Add download button and handler |
+| `app/routers/attendance.py` | Add `/export` endpoint with new params |
+| `app/services/pdf_service.py` | Update PDF header with date + service type |
 
 ---
 
 ## Notes
 
-1. **Server Dependency**: This plan assumes you have access to the backend server code. The PDF generation should be done server-side as you specified.
+1. **Server Dependency**: You will implement the backend server code for PDF generation.
 
 2. **PDF Library**: On the server, you can use any Python PDF library:
    - `reportlab` (recommended, most feature-rich)
@@ -332,4 +307,4 @@ graph TD
 
 3. **Date Filtering**: The PDF export should respect the same date range and service type filters as the existing attendance list.
 
-4. **File Storage**: On Android, you may want to use the Downloads folder or share the PDF directly using a file picker.
+4. **File Storage**: On Android, the client saves to documents directory and uses share functionality.

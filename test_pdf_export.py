@@ -2,6 +2,11 @@
 """
 Test script to generate sample PDF with random attendance data.
 Run this to test the PDF layout and design.
+
+Test scenarios:
+1. Single date with service type: date_str="21 February 2026", service_type_str="Sunday Service"
+2. Date range with service type: date_str="21 February 2026 - 26 March 2026", service_type_str="Sunday Services only"
+3. Date range without service type: date_str="21 February 2026 - 26 March 2026", service_type_str="All Services"
 """
 
 import sys
@@ -10,7 +15,7 @@ import os
 # Add the app directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 
 
@@ -159,19 +164,68 @@ def test_pdf_generation():
     print(f"  ... and {len(attendances) - 5} more records")
     print("-" * 80)
     
-    # Generate PDF
-    pdf_bytes = generate_attendance_pdf(attendances)
+    # Test Scenario 1: Single date with service type
+    print("\n📄 Test 1: Single date with service type")
+    print("   Header: '21 February 2026 | Sunday Service'")
+    pdf_bytes = generate_attendance_pdf(
+        attendances,
+        date_str="21 February 2026",
+        service_type_str="Sunday Service"
+    )
     
     # Save to file
     output_path = "test_attendance_export.pdf"
     with open(output_path, "wb") as f:
         f.write(pdf_bytes)
     
-    print(f"\n✅ PDF generated successfully!")
-    print(f"   Output file: {output_path}")
-    print(f"   File size: {len(pdf_bytes):,} bytes")
+    print(f"   ✅ PDF generated: {output_path} ({len(pdf_bytes):,} bytes)")
     
-    return output_path
+    # Test Scenario 2: Date range with service type
+    print("\n📄 Test 2: Date range with service type (filter applied)")
+    print("   Header: '21 February 2026 - 26 March 2026 | Sunday Services only'")
+    pdf_bytes_2 = generate_attendance_pdf(
+        attendances,
+        date_str="21 February 2026 - 26 March 2026",
+        service_type_str="Sunday Services only"
+    )
+    
+    output_path_2 = "test_attendance_export_range.pdf"
+    with open(output_path_2, "wb") as f:
+        f.write(pdf_bytes_2)
+    
+    print(f"   ✅ PDF generated: {output_path_2} ({len(pdf_bytes_2):,} bytes)")
+    
+    # Test Scenario 3: Date range without service type filter
+    print("\n📄 Test 3: Date range without service type filter")
+    print("   Header: '21 February 2026 - 26 March 2026 | All Services'")
+    pdf_bytes_3 = generate_attendance_pdf(
+        attendances,
+        date_str="21 February 2026 - 26 March 2026",
+        service_type_str="All Services"
+    )
+    
+    output_path_3 = "test_attendance_export_all.pdf"
+    with open(output_path_3, "wb") as f:
+        f.write(pdf_bytes_3)
+    
+    print(f"   ✅ PDF generated: {output_path_3} ({len(pdf_bytes_3):,} bytes)")
+    
+    # Test Scenario 4: Legacy mode (no date/service_type - shows current date)
+    print("\n📄 Test 4: Legacy mode (no date/service_type params)")
+    print("   Header: Current date only")
+    pdf_bytes_4 = generate_attendance_pdf(attendances)
+    
+    output_path_4 = "test_attendance_export_legacy.pdf"
+    with open(output_path_4, "wb") as f:
+        f.write(pdf_bytes_4)
+    
+    print(f"   ✅ PDF generated: {output_path_4} ({len(pdf_bytes_4):,} bytes)")
+    
+    print("\n" + "=" * 80)
+    print("✅ All PDF generation tests completed successfully!")
+    print("=" * 80)
+    
+    return [output_path, output_path_2, output_path_3, output_path_4]
 
 
 if __name__ == "__main__":
