@@ -446,8 +446,8 @@ class ContactService:
         """Import contacts from VCF content"""
         try:
             imported_count = 0
-            updated_count = 0
-            failed_count = 0
+            skipped_count = 0  # Count of contacts that already exist (by phone)
+            failed_count = 0  # Count of contacts that failed (invalid phone, etc.)
             errors = []
 
             # Split VCF content into individual vCard strings and parse each one
@@ -477,27 +477,22 @@ class ContactService:
                 try:
                     # Phone number is essential, check for it first.
                     if not hasattr(vcard, 'tel_list') or not vcard.tel_list:
-                        try:
-                            name_for_error = vcard.fn.value
-                        except Exception:
-                            name_for_error = "an unknown contact"
                         failed_count += 1
-                        errors.append(f"Card for {name_for_error} is missing a phone number.")
+                        errors.append(f"Card is missing a phone number.")
                         continue
 
-                    # Try to get the name, but don't fail the whole card if it's missing/malformed.
-                    try:
-                        name = vcard.fn.value
-                    except Exception:
-                        name = None
+                    # IGNORE names from VCF - only use phone numbers
+                    # This prevents unprofessional names like "Wifey" from Samsung/Google contacts
+                    # from overwriting existing contact names
 
                     for tel in vcard.tel_list:
                         phone = None
                         try:
                             phone = tel.value
                             
-                            # If name was not found, use the phone number as the name.
-                            contact_name = name if name else str(phone)
+                            # Always use phone number as name - never use VCF name
+                            # This ensures professional and consistent naming
+                            contact_name = str(phone)
 
                             # Extract other fields from VCard if available, or set defaults
                             # VCF standard doesn't have direct equivalents for 'status', 'tags', 'metadata_'
@@ -520,42 +515,18 @@ class ContactService:
                             imported_count += 1
                         
                         except IntegrityError:
-                            # Contact already exists - try to update name if provided
+                            # Contact already exists - skip gracefully, do NOT update
+                            # This prevents overwriting existing contact names with unprofessional VCF names
                             self.db.rollback()
-                            
-                            # Clean and validate the phone number
-                            try:
-                                cleaned_phone = self._clean_and_validate_phone(str(phone).strip())
-                            except ValueError:
-                                failed_count += 1
-                                errors.append(f"Invalid phone number format: {phone}")
-                                continue
-                            
-                            # Check if contact exists
-                            existing_contact = self.get_contact_by_phone(cleaned_phone)
-                            if existing_contact:
-                                # Only update name if a new name is provided and not empty
-                                if name and name.strip():
-                                    update_data = ContactUpdate(name=name.strip())
-                                    try:
-                                        self.update_contact_by_phone(cleaned_phone, update_data)
-                                        updated_count += 1
-                                    except Exception as update_error:
-                                        failed_count += 1
-                                        errors.append(f"Failed to update contact {cleaned_phone}: {str(update_error)}")
-                                else:
-                                    # Name not provided or empty - just skip (not an error)
-                                    updated_count += 1
-                            else:
-                                failed_count += 1
-                                errors.append(f"Contact with phone number {phone} already exists (unclear state).")
+                            skipped_count += 1
+                            # No error added - skipping existing contacts is expected behavior
                         except ValueError as e:
                             failed_count += 1
-                            errors.append(f"Error processing phone number {phone} for '{name or 'Unknown'}': {str(e)}")
+                            errors.append(f"Error processing phone number {phone}: {str(e)}")
                             self.db.rollback()
                         except Exception as e:
                             failed_count += 1
-                            errors.append(f"Error processing phone number {phone} for '{name or 'Unknown'}': {str(e)}")
+                            errors.append(f"Error processing phone number {phone}: {str(e)}")
                             self.db.rollback()
 
                 except Exception as e:
@@ -571,8 +542,8 @@ class ContactService:
             return {
                 'success': True,
                 'imported_count': imported_count,
-                'updated_count': updated_count,
-                'failed_count': failed_count,
+                'skipped_count': skipped_count,  # Contacts that already exist (by phone)
+                'failed_count': failed_count,      # Contacts with invalid phone numbers
                 'errors': errors[:10]
             }
 
