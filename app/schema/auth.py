@@ -18,3 +18,20 @@ class TokenRefresh(BaseModel):
 class UserRegisterResponse(User):
     access_token: str
     token_type: str
+
+class SignupStatus(BaseModel):
+    """Response schema for signup status endpoint."""
+    allowed: bool
+    env_default: bool
+    runtime_override: Optional[bool] = None
+    message: str
+
+class SignupToggle(BaseModel):
+    """Request schema for toggling signup allowance."""
+    enabled: bool
+
+class SignupToggleResponse(BaseModel):
+    """Response schema after toggling signup status."""
+    allowed: bool
+    message: str
+    changed_by: str

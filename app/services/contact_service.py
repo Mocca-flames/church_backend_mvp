@@ -225,13 +225,34 @@ class ContactService:
         return self.db.query(Contact).filter(Contact.phone == phone).first()
     
     def delete_contact(self, contact_id: int) -> bool:
-        """Delete a contact"""
+        """Delete a contact and all related records"""
+        from app.models import Attendance, ScenarioTask
+        
         contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
-        if contact:
-            self.db.delete(contact)
-            self.db.commit()
-            return True
-        return False
+        if not contact:
+            return False
+        
+        # Check for related records before deletion
+        attendance_count = self.db.query(Attendance).filter(Attendance.contact_id == contact_id).count()
+        task_count = self.db.query(ScenarioTask).filter(ScenarioTask.contact_id == contact_id).count()
+        
+        logger.info(f"Deleting contact {contact_id}: Found {attendance_count} attendance records, {task_count} scenario tasks")
+        
+        # Delete related attendance records
+        if attendance_count > 0:
+            self.db.query(Attendance).filter(Attendance.contact_id == contact_id).delete(synchronize_session=False)
+            logger.info(f"Deleted {attendance_count} attendance records for contact {contact_id}")
+        
+        # Delete related scenario tasks
+        if task_count > 0:
+            self.db.query(ScenarioTask).filter(ScenarioTask.contact_id == contact_id).delete(synchronize_session=False)
+            logger.info(f"Deleted {task_count} scenario tasks for contact {contact_id}")
+        
+        # Now delete the contact
+        self.db.delete(contact)
+        self.db.commit()
+        logger.info(f"Successfully deleted contact {contact_id}")
+        return True
 
     def add_tags_to_contact(self, contact_id: int, tags: List[str]) -> Optional[Contact]:
         """Add tags to a contact"""

@@ -6,8 +6,9 @@ from app.database import get_db
 from app.auth import authenticate_user, create_access_token, create_refresh_token, get_password_hash, verify_token
 from app.models import User
 from app.schema.user import UserCreate, User as UserSchema, UserLogin
-from app.dependencies import get_current_active_user
-from app.schema.auth import Token, TokenRefresh, TokenData, UserRegisterResponse
+from app.dependencies import get_current_active_user, get_current_admin, require_signups_enabled
+from app.schema.auth import SignupToggleResponse, Token, TokenRefresh, TokenData, UserRegisterResponse, SignupStatus, SignupToggle
+from app.config import are_signups_allowed, set_signups_allowed, get_signup_status
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -36,6 +37,15 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 @router.post("/register", response_model=UserRegisterResponse)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     logging.info(f"Attempting registration for email: {user.email}")
+    
+    # Check if signups are allowed
+    if not are_signups_allowed():
+        logging.warning(f"Registration rejected: Signups are currently disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="New user registrations are currently disabled. Please contact an administrator."
+        )
+    
     # Check if user already exists
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
@@ -86,3 +96,48 @@ async def refresh_token(token_refresh: TokenRefresh, db: Session = Depends(get_d
     )
     logging.info(f"Token refreshed for email: {user.email}")
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/settings/signups", response_model=SignupStatus)
+async def get_signup_settings(current_user: User = Depends(get_current_active_user)):
+    """Get the current signup registration status. Any authenticated user can view this."""
+    status_info = get_signup_status()
+    allowed = status_info["allowed"]
+    message = "New user registrations are currently enabled." if allowed else "New user registrations are currently disabled."
+    
+    return SignupStatus(
+        allowed=allowed,
+        env_default=status_info["env_default"],
+        runtime_override=status_info["runtime_override"],
+        message=message
+    )
+
+@router.post("/settings/signups", response_model=SignupToggleResponse)
+async def toggle_signup_settings(
+    toggle: SignupToggle,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Enable or disable new user registrations.
+    Only super_admin and it_admin users can modify this setting.
+    This is a runtime change that doesn't persist across server restarts.
+    To make it permanent, update the ALLOW_SIGNUPS environment variable.
+    """
+    previous_status = are_signups_allowed()
+    set_signups_allowed(toggle.enabled)
+    new_status = are_signups_allowed()
+    
+    action = "enabled" if new_status else "disabled"
+    logging.info(f"Signups {action} by {current_user.email} (role: {current_user.role})")
+    
+    message = f"New user registrations have been {action}."
+    if new_status != previous_status:
+        message += f" Changed from {'enabled' if previous_status else 'disabled'}."
+    else:
+        message += " Status unchanged."
+    
+    return SignupToggleResponse(
+        allowed=new_status,
+        message=message,
+        changed_by=current_user.email
+    )
