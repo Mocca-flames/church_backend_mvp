@@ -36,11 +36,38 @@ async def get_contacts(
 async def create_contact(
     contact: ContactCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_contact_manager) # Apply new authorization
+    current_user: User = Depends(get_current_contact_manager)
 ):
+    """
+    Create or update a contact.
+    
+    This endpoint now supports upsert behavior:
+    - If contact with phone exists: updates name, merges tags
+    - If contact doesn't exist: creates new contact
+    
+    Expected payload:
+    {
+        "phone": "0712345678",  // Required
+        "name": "John Doe",     // Optional
+        "status": "active",     // Optional, default: "active"
+        "tags": ["member"],    // Optional - tags are merged with existing
+        "opt_out_sms": false,   // Optional, default: false
+        "opt_out_whatsapp": false  // Optional, default: false
+    }
+    """
     service = ContactService(db)
     try:
-        return service.create_contact(contact)
+        return service.upsert_contact(contact)
+    except ValueError as e:
+        # Handle validation errors with detailed messages
+        raise HTTPException(
+            status_code=400, 
+            detail={
+                "error": "Validation Error",
+                "message": str(e),
+                "hint": "Phone number must be in South African format: 0712345678, 271234567890, or +271234567890. Also supports international formats like +1234567890."
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -86,6 +113,43 @@ async def add_contacts_from_list(
         result['message'] = f"Successfully imported {imported_count} contacts. Skipped {skipped_count} duplicates."
         
     return result
+
+@router.post("/sync", response_model=Dict[str, Any])
+async def sync_contacts(
+    contact_import: ContactImport,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """
+    Sync contacts from device (bulk upsert).
+    
+    This endpoint is designed for device sync scenarios where:
+    - Device was offline with local database
+    - Now syncing all contacts to server
+    - Some contacts are new, some existing (by phone)
+    - Contacts may have updated names and merged tags
+    
+    Each contact in the list will be:
+    - Created if it doesn't exist (by phone)
+    - Updated if it already exists (name, tags merged, status)
+    
+    Expected payload:
+    {
+        "contacts": [
+            {"phone": "0712345678", "name": "John Doe", "tags": ["member"]},
+            {"phone": "0821234567", "name": "Jane Doe", "tags": ["visitor"]}
+        ]
+    }
+    
+    Returns summary with synced and failed counts.
+    """
+    service = ContactService(db)
+    
+    try:
+        result = service.sync_contacts(contact_import.contacts)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/mass-update", response_model=List[Contact])
 async def mass_update_contacts(

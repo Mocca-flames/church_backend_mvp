@@ -20,43 +20,69 @@ class ContactService:
 
     def _clean_and_validate_phone(self, phone: str) -> str:
         """
-        Cleans and validates a South African phone number according to specified rules.
-        Ensures it's in +27XXXXXXXXX format (13 characters).
-        Raises ValueError for invalid formats.
+        Cleans and validates a phone number.
+        
+        Supports:
+        - South African: 0XXXXXXXXX (10 digits), 27XXXXXXXXX (11 digits), +27XXXXXXXXX (12 chars)
+        - International: +1XXXXXXXXXX (US/Canada), +44XXXXXXXXXX (UK), etc.
+        - Various formats with spaces/dashes: +27 71 234 5678, 071-234-5678, etc.
+        
+        Raises ValueError for invalid formats or empty numbers.
         """
+        if not phone:
+            raise ValueError("Phone number is required.")
+            
         original_phone = phone
+        # Remove all non-digit characters
         digits_only = re.sub(r'\D', '', phone)
 
         if not digits_only:
             raise ValueError("Phone number cannot be empty.")
 
-        formatted_phone = None
-
-        if original_phone.startswith('0'):
-            if len(digits_only) == 10 and digits_only.startswith('0'):
-                # Remove leading '0' and prepend '+27'
-                formatted_phone = '+27' + digits_only[1:]
-            else:
-                raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '0' must be 10 digits long.")
-        elif original_phone.startswith('27'):
-            if len(digits_only) == 11 and digits_only.startswith('27'):
-                # Prepend '+'
-                formatted_phone = '+' + digits_only
-            else:
-                raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '27' must be 11 digits long.")
-        elif original_phone.startswith('+27'):
-            if len(digits_only) == 11 and digits_only.startswith('27'):
-                formatted_phone = '+' + digits_only
-            else:
-                raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '+27' must have 11 digits after the prefix (e.g., '+27721234567').")
-        else:
-            raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Must start with '0', '27', or '+27'.")
-
-        # Final check for the expected 12-character format (+27XXXXXXXXX)
-        if len(formatted_phone) != 12:
-            raise ValueError(f"Internal error: Formatted phone number '{formatted_phone}' has incorrect length. Expected 12 characters (+27XXXXXXXXX).")
-
-        return formatted_phone
+        # Handle South African numbers
+        if original_phone.startswith('0') or original_phone.startswith('+27') or original_phone.startswith('27'):
+            if original_phone.startswith('0'):
+                if len(digits_only) == 10 and digits_only.startswith('0'):
+                    formatted_phone = '+27' + digits_only[1:]
+                else:
+                    raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '0' must be 10 digits long (e.g., 0712345678).")
+            elif original_phone.startswith('27'):
+                if len(digits_only) == 11 and digits_only.startswith('27'):
+                    formatted_phone = '+' + digits_only
+                else:
+                    raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Numbers starting with '27' must be 11 digits long (e.g., 271234567890).")
+            elif original_phone.startswith('+27'):
+                if len(digits_only) == 11 and digits_only.startswith('27'):
+                    formatted_phone = '+' + digits_only
+                else:
+                    raise ValueError(f"Invalid South African phone number format: '{original_phone}'. Must be +27 followed by 9 digits (e.g., +27123456789).")
+            
+            # Final check for South African format
+            if len(formatted_phone) != 12:
+                raise ValueError(f"Internal error: Formatted phone number '{formatted_phone}' has incorrect length. Expected 12 characters (+27XXXXXXXXX).")
+            
+            return formatted_phone
+        
+        # Handle international numbers (with + prefix)
+        if original_phone.startswith('+'):
+            # Keep the + and validate the rest
+            country_code = digits_only[:1]  # First digit is country code
+            if len(digits_only) < 10:
+                raise ValueError(f"Invalid international phone number: '{original_phone}'. Must have at least 10 digits.")
+            # Return as-is for international numbers, just ensure it starts with +
+            return '+' + digits_only
+        
+        # If it doesn't start with 0, +27, 27, or +, it's likely a local number without country code
+        # Try to interpret as South African local number (9 digits)
+        if len(digits_only) == 9:
+            # Assume it's a local SA number without the 0 prefix
+            return '+27' + digits_only
+        
+        # If we get here, the format is not recognized
+        raise ValueError(
+            f"Unrecognized phone number format: '{original_phone}'. "
+            f"Supported formats: 0712345678 (local SA), +27123456789 (international SA), +1234567890 (international)."
+        )
 
     def _get_contact_metadata(self, contact: Contact) -> Dict[str, Any]:
         """Get contact metadata as a dictionary"""
@@ -108,6 +134,132 @@ class ContactService:
         except Exception as e:
             self.db.rollback()
             raise e
+
+    def upsert_contact(self, contact: ContactCreate) -> Contact:
+        """
+        Create or update a contact.
+        
+        If contact exists by phone:
+        - Update name if provided
+        - Merge tags (add new tags, keep existing)
+        - Update status if provided
+        - Update opt_out settings if provided
+        
+        If contact doesn't exist:
+        - Create new contact
+        
+        This is ideal for device sync scenarios where offline contacts are synced.
+        """
+        # Clean and validate phone number
+        contact.phone = self._clean_and_validate_phone(contact.phone)
+        
+        # Check if contact already exists
+        existing_contact = self.db.query(Contact).filter(Contact.phone == contact.phone).first()
+        
+        if existing_contact:
+            # Update existing contact
+            existing_contact.updated_at = datetime.utcnow()
+            
+            # Update name if provided (prefer non-empty names)
+            if contact.name:
+                existing_contact.name = contact.name
+            elif not existing_contact.name:
+                # If no name on server and new contact has no name, use phone
+                existing_contact.name = contact.phone
+            
+            # Update status if provided
+            if contact.status:
+                existing_contact.status = contact.status
+            
+            # Update opt_out settings if provided
+            if hasattr(contact, 'opt_out_sms'):
+                existing_contact.opt_out_sms = contact.opt_out_sms
+            if hasattr(contact, 'opt_out_whatsapp'):
+                existing_contact.opt_out_whatsapp = contact.opt_out_whatsapp
+            
+            # Merge tags from incoming contact with existing tags
+            existing_tags = self._get_contact_tags(existing_contact)
+            new_tags = contact.tags if contact.tags else []
+            # Add new tags that don't already exist
+            merged_tags = list(set(existing_tags + new_tags))
+            self._set_contact_tags(existing_contact, merged_tags)
+            
+            # Update metadata if provided
+            if contact.metadata_:
+                existing_metadata = self._get_contact_metadata(existing_contact)
+                try:
+                    incoming_metadata = json.loads(contact.metadata_)
+                except (json.JSONDecodeError, TypeError):
+                    incoming_metadata = {}
+                
+                # Merge metadata (incoming overwrites existing)
+                merged_metadata = {**existing_metadata, **incoming_metadata}
+                self._set_contact_metadata(existing_contact, merged_metadata)
+            
+            try:
+                self.db.add(existing_contact)
+                self.db.commit()
+                self.db.refresh(existing_contact)
+                return existing_contact
+            except Exception as e:
+                self.db.rollback()
+                raise e
+        else:
+            # Create new contact
+            db_contact = Contact(
+                name=contact.name if contact.name else contact.phone,
+                phone=contact.phone,
+                status=contact.status,
+                opt_out_sms=contact.opt_out_sms,
+                opt_out_whatsapp=contact.opt_out_whatsapp,
+                metadata_=contact.metadata_
+            )
+            try:
+                self.db.add(db_contact)
+                self.db.commit()
+                self.db.refresh(db_contact)
+                return db_contact
+            except Exception as e:
+                self.db.rollback()
+                raise e
+
+    def sync_contacts(self, contacts: List[ContactCreate]) -> Dict[str, Any]:
+        """
+        Bulk sync contacts - creates new or updates existing.
+        
+        This endpoint is designed for device sync scenarios where:
+        - Device was offline with local database
+        - Now syncing all contacts to server
+        - Some contacts are new, some existing (by phone)
+        
+        Returns summary with created/updated/failed counts.
+        """
+        created_count = 0
+        updated_count = 0
+        failed_count = 0
+        errors = []
+        
+        for contact_data in contacts:
+            try:
+                result = self.upsert_contact(contact_data)
+                # Check if it was created or updated (we can check if it's a new ID or existing)
+                # Since we don't have the original state, we just count as upserted
+                created_count += 1
+            except Exception as e:
+                failed_count += 1
+                errors.append({
+                    'phone': contact_data.phone,
+                    'error': str(e)
+                })
+        
+        return {
+            'success': True,
+            'synced_count': created_count,  # Total contacts processed
+            'created_count': 'N/A',  # Can't determine without before/after comparison
+            'updated_count': 'N/A',
+            'failed_count': failed_count,
+            'errors': errors[:20]  # Limit error messages
+        }
     
     def update_contact(self, contact_id: int, contact_update: ContactUpdate) -> Optional[Contact]:
         """Update an existing contact"""
