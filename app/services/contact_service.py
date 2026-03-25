@@ -110,7 +110,7 @@ class ContactService:
         metadata['tags'] = cleaned_tags
         self._set_contact_metadata(contact, metadata)
 
-    def create_contact(self, contact: ContactCreate) -> Contact:
+    def create_contact(self, contact: ContactCreate, created_by: int = None) -> Contact:
         """Create a new contact"""
         # Clean and validate phone number
         contact.phone = self._clean_and_validate_phone(contact.phone)
@@ -121,7 +121,8 @@ class ContactService:
             status=contact.status,
             opt_out_sms=contact.opt_out_sms,
             opt_out_whatsapp=contact.opt_out_whatsapp,
-            metadata_=contact.metadata_
+            metadata_=contact.metadata_,
+            created_by=created_by
         )
         try:
             self.db.add(db_contact)
@@ -135,7 +136,7 @@ class ContactService:
             self.db.rollback()
             raise e
 
-    def upsert_contact(self, contact: ContactCreate) -> Contact:
+    def upsert_contact(self, contact: ContactCreate, created_by: int = None, updated_by: int = None) -> Contact:
         """
         Create or update a contact.
         
@@ -159,6 +160,7 @@ class ContactService:
         if existing_contact:
             # Update existing contact
             existing_contact.updated_at = datetime.utcnow()
+            existing_contact.updated_by = updated_by
             
             # Update name if provided (prefer non-empty names)
             if contact.name:
@@ -212,7 +214,8 @@ class ContactService:
                 status=contact.status,
                 opt_out_sms=contact.opt_out_sms,
                 opt_out_whatsapp=contact.opt_out_whatsapp,
-                metadata_=contact.metadata_
+                metadata_=contact.metadata_,
+                created_by=created_by
             )
             try:
                 self.db.add(db_contact)
@@ -223,7 +226,7 @@ class ContactService:
                 self.db.rollback()
                 raise e
 
-    def sync_contacts(self, contacts: List[ContactCreate]) -> Dict[str, Any]:
+    def sync_contacts(self, contacts: List[ContactCreate], user_id: int = None) -> Dict[str, Any]:
         """
         Bulk sync contacts - creates new or updates existing.
         
@@ -241,7 +244,7 @@ class ContactService:
         
         for contact_data in contacts:
             try:
-                result = self.upsert_contact(contact_data)
+                result = self.upsert_contact(contact_data, created_by=user_id, updated_by=user_id)
                 # Check if it was created or updated (we can check if it's a new ID or existing)
                 # Since we don't have the original state, we just count as upserted
                 created_count += 1
@@ -261,7 +264,7 @@ class ContactService:
             'errors': errors[:20]  # Limit error messages
         }
     
-    def update_contact(self, contact_id: int, contact_update: ContactUpdate) -> Optional[Contact]:
+    def update_contact(self, contact_id: int, contact_update: ContactUpdate, updated_by: int = None) -> Optional[Contact]:
         """Update an existing contact"""
         db_contact = self.db.query(Contact).filter(Contact.id == contact_id).first()
         if not db_contact:
@@ -284,6 +287,10 @@ class ContactService:
 
         for key, value in update_data.items():
             setattr(db_contact, key, value)
+        
+        # Set updated_by if provided
+        if updated_by:
+            db_contact.updated_by = updated_by
 
         try:
             self.db.add(db_contact)
@@ -297,7 +304,7 @@ class ContactService:
             self.db.rollback()
             raise e
 
-    def update_contact_by_phone(self, phone: str, contact_update: ContactUpdate) -> Optional[Contact]:
+    def update_contact_by_phone(self, phone: str, contact_update: ContactUpdate, updated_by: int = None) -> Optional[Contact]:
         """Update an existing contact by phone number"""
         db_contact = self.db.query(Contact).filter(Contact.phone == phone).first()
         if not db_contact:
@@ -320,6 +327,10 @@ class ContactService:
 
         for key, value in update_data.items():
             setattr(db_contact, key, value)
+        
+        # Set updated_by if provided
+        if updated_by:
+            db_contact.updated_by = updated_by
 
         try:
             self.db.add(db_contact)

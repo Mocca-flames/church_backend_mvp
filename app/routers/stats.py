@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Dict, Any
+from datetime import datetime, timedelta
 from app.database import get_db
 from app.models import User, Contact, Communication
 from app.dependencies import get_current_active_user
@@ -67,3 +68,42 @@ async def get_communications_by_type(
 
     counts_by_type = {row.message_type: row[1] for row in results}
     return {"counts_by_type": counts_by_type}
+
+@router.get("/daily-progress", response_model=Dict[str, Any])
+async def get_daily_progress(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Returns the count of new and modified contacts for the current day.
+    
+    This is a simple, fast endpoint that provides daily progress tracking:
+    - new_contacts: contacts created today
+    - modified_contacts: contacts updated today (excluding new ones)
+    - total: total new or modified for the day
+    
+    The count resets at midnight each day.
+    """
+    # Get start of today (midnight)
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Count new contacts created today by current user
+    new_contacts_count = db.query(Contact).filter(
+        Contact.created_at >= today_start,
+        Contact.created_by == current_user.id
+    ).count()
+    
+    # Count modified contacts (updated today but not created today) by current user
+    modified_contacts_count = db.query(Contact).filter(
+        Contact.updated_at >= today_start,
+        Contact.created_at < today_start,
+        Contact.updated_by == current_user.id
+    ).count()
+    
+    return {
+        "date": today_start.strftime("%Y-%m-%d"),
+        "user_id": current_user.id,
+        "new_contacts": new_contacts_count,
+        "modified_contacts": modified_contacts_count,
+        "total": new_contacts_count + modified_contacts_count
+    }

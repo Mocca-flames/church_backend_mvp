@@ -57,7 +57,7 @@ async def create_contact(
     """
     service = ContactService(db)
     try:
-        return service.upsert_contact(contact)
+        return service.upsert_contact(contact, created_by=current_user.id)
     except ValueError as e:
         # Handle validation errors with detailed messages
         raise HTTPException(
@@ -84,7 +84,7 @@ async def add_contacts_from_list(
 
     for contact_data in contact_import.contacts:
         try:
-            service.create_contact(contact_data)
+            service.create_contact(contact_data, created_by=current_user.id)
             imported_count += 1
         except ValueError as e:
             skipped_count += 1
@@ -146,7 +146,7 @@ async def sync_contacts(
     service = ContactService(db)
     
     try:
-        result = service.sync_contacts(contact_import.contacts)
+        result = service.sync_contacts(contact_import.contacts, user_id=current_user.id)
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -179,7 +179,7 @@ async def mass_update_contacts(
             continue
 
         try:
-            updated_contact = service.update_contact_by_phone(phone, contact_update)
+            updated_contact = service.update_contact_by_phone(phone, contact_update, updated_by=current_user.id)
             if not updated_contact:
                 errors.append({"phone": phone, "error": "Contact not found"})
             else:
@@ -205,7 +205,7 @@ async def update_contact(
 ):
     service = ContactService(db)
     try:
-        updated_contact = service.update_contact(contact_id, contact)
+        updated_contact = service.update_contact(contact_id, contact, updated_by=current_user.id)
         if not updated_contact:
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact

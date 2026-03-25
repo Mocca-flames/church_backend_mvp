@@ -17,6 +17,8 @@ class User(Base):
     attendance_records = relationship("Attendance", back_populates="recorder")
     created_scenarios = relationship("Scenario", back_populates="creator")
     completed_tasks = relationship("ScenarioTask", back_populates="completer")
+    created_contacts = relationship("Contact", back_populates="creator", foreign_keys=["created_by"])
+    updated_contacts = relationship("Contact", back_populates="updater", foreign_keys=["updated_by"])
 
 class Contact(Base):
     __tablename__ = "contacts"
@@ -30,6 +32,11 @@ class Contact(Base):
     metadata_ = Column(Text) # Store JSON string for flexible data
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    creator = relationship("User", back_populates="created_contacts", foreign_keys=[created_by])
+    updater = relationship("User", back_populates="updated_contacts", foreign_keys=[updated_by])
 
 class Communication(Base):
     __tablename__ = "communications"
