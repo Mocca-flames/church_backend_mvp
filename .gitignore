@@ -145,6 +145,9 @@ process_contacts.py
 save_phone_data.py
 test_mass_update.py
 update_contacts.py
+test_contacts.py
+get_new_or_modified_contacts.py
+export_contacts.py
 
 # Documentation with sensitive info
 endpoints.md

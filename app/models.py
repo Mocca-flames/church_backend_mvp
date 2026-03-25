@@ -35,8 +35,8 @@ class Contact(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     
-    creator = relationship("User", foreign_keys=[created_by])
-    updater = relationship("User", foreign_keys=[updated_by])
+    creator = relationship("User", foreign_keys=[created_by], back_populates="created_contacts")
+    updater = relationship("User", foreign_keys=[updated_by], back_populates="updated_contacts")
 
 class Communication(Base):
     __tablename__ = "communications"
