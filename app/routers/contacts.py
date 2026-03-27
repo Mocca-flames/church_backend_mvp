@@ -5,6 +5,8 @@ from datetime import datetime
 import csv
 import io
 import re
+import os
+import logging
 from app.database import get_db
 from app.models import User
 from app.schema.contact import BulkTagRequest, Contact, ContactCreate, ContactUpdate, ContactImport, TagRequest
@@ -12,9 +14,65 @@ from app.services.contact_service import ContactService
 from app.dependencies import get_current_active_user, get_current_contact_manager
 from pydantic import BaseModel
 
+# Create logs directory if it doesn't exist
+logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
+os.makedirs(logs_dir, exist_ok=True)
+
+# Configure dedicated logger for 400 errors
+error_logger = logging.getLogger('contact_400_errors')
+error_logger.setLevel(logging.ERROR)
+
+# File handler for 400 errors
+error_file_handler = logging.FileHandler(os.path.join(logs_dir, 'contact_400_errors.log'))
+error_file_handler.setLevel(logging.ERROR)
+
+# Detailed formatter including request/response data
+detailed_formatter = logging.Formatter(
+    '%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+error_file_handler.setFormatter(detailed_formatter)
+
+# Add handler if not already added (avoid duplicate handlers)
+if not error_logger.handlers:
+    error_logger.addHandler(error_file_handler)
+
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 # Pydantic models for tag operations
+
+
+@router.get("/changes", response_model=Dict[str, Any])
+async def get_contacts_changes(
+    start_date: datetime = Query(..., description="Start of date range (ISO 8601 format)"),
+    end_date: datetime = Query(..., description="End of date range (ISO 8601 format)"),
+    limit: int = Query(5000, ge=1, le=10000, description="Maximum number of contacts to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """
+    Get contacts that were created or modified within a date range.
+    
+    Returns:
+    - new_contacts: contacts created within the range
+    - modified_contacts: contacts updated within range (excluding those also created in range)
+    - statistics: counts and percentages
+    
+    This endpoint uses proper date range filtering (both start AND end bounds).
+    """
+    service = ContactService(db)
+    result = service.get_contacts_in_date_range(start_date, end_date, limit)
+    
+    # Format the response
+    return {
+        'date_range': {
+            'start': start_date.isoformat(),
+            'end': end_date.isoformat()
+        },
+        'new_contacts': result['new_contacts'],
+        'modified_contacts': result['modified_contacts'],
+        'statistics': result['statistics']
+    }
 
 
 @router.get("", response_model=List[Contact])
@@ -25,12 +83,16 @@ async def get_contacts(
     status: Optional[str] = None,
     tags: Optional[List[str]] = Query(None, description="Filter contacts by tags"),
     created_after: Optional[datetime] = Query(None, description="Filter contacts created after this datetime (ISO 8601 format)"),
+    created_before: Optional[datetime] = Query(None, description="Filter contacts created before this datetime (ISO 8601 format)"),
     updated_after: Optional[datetime] = Query(None, description="Filter contacts updated after this datetime (ISO 8601 format)"),
+    updated_before: Optional[datetime] = Query(None, description="Filter contacts updated before this datetime (ISO 8601 format)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_contact_manager) # Apply new authorization
 ):
     service = ContactService(db)
-    return service.get_contacts(skip=skip, limit=limit, search=search, status=status, tags=tags, created_after=created_after, updated_after=updated_after)
+    return service.get_contacts(skip=skip, limit=limit, search=search, status=status, tags=tags, 
+                                 created_after=created_after, created_before=created_before,
+                                 updated_after=updated_after, updated_before=updated_before)
 
 @router.post("", response_model=Contact)
 async def create_contact(
@@ -60,16 +122,29 @@ async def create_contact(
         return service.upsert_contact(contact, created_by=current_user.id)
     except ValueError as e:
         # Handle validation errors with detailed messages
+        error_msg = str(e)
+        # Log the 400 error with full details
+        error_logger.error(
+            f"POST /contacts | 400 Validation Error | "
+            f"phone={contact.phone} | name={contact.name} | "
+            f"error={error_msg}"
+        )
         raise HTTPException(
             status_code=400, 
             detail={
                 "error": "Validation Error",
-                "message": str(e),
+                "message": error_msg,
                 "hint": "Phone number must be in South African format: 0712345678, 271234567890, or +271234567890. Also supports international formats like +1234567890."
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"POST /contacts | 400 Error | "
+            f"phone={contact.phone} | name={contact.name} | "
+            f"error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @router.post("/add-list", response_model=Dict[str, Any]) # New endpoint for adding list of contacts
 async def add_contacts_from_list(
@@ -98,7 +173,7 @@ async def add_contacts_from_list(
                 'contact': contact_data.name or contact_data.phone,
                 'error': f"Unexpected error: {str(e)}"
             })
-            
+    
     result = {
         'success': True,
         'imported_count': imported_count,
@@ -109,6 +184,12 @@ async def add_contacts_from_list(
     
     if errors:
         result['message'] = f"Imported {imported_count} contacts, skipped {skipped_count} due to errors or duplicates."
+        # Log the import errors
+        error_logger.error(
+            f"POST /contacts/add-list | Partial Failure | "
+            f"total={len(contact_import.contacts)} | imported={imported_count} | skipped={skipped_count} | "
+            f"error_details={errors}"
+        )
     else:
         result['message'] = f"Successfully imported {imported_count} contacts. Skipped {skipped_count} duplicates."
         
@@ -147,9 +228,22 @@ async def sync_contacts(
     
     try:
         result = service.sync_contacts(contact_import.contacts, user_id=current_user.id)
+        # Log if there were any failures
+        if result.get('failed_count', 0) > 0:
+            error_logger.error(
+                f"POST /contacts/sync | Partial Failure | "
+                f"synced={result.get('synced_count', 0)} | failed={result.get('failed_count', 0)} | "
+                f"errors={result.get('errors', [])}"
+            )
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"POST /contacts/sync | 400 Error | "
+            f"contact_count={len(contact_import.contacts)} | "
+            f"error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @router.put("/mass-update", response_model=List[Contact])
 async def mass_update_contacts(
@@ -188,6 +282,12 @@ async def mass_update_contacts(
             errors.append({"phone": phone, "error": str(e)})
 
     if errors:
+        # Log the mass-update errors
+        error_logger.error(
+            f"PUT /contacts/mass-update | Partial Failure | "
+            f"total={len(contacts)} | updated={len(updated_contacts)} | errors={len(errors)} | "
+            f"error_details={errors}"
+        )
         return {
             "success": False,
             "updated_contacts": updated_contacts,
@@ -207,10 +307,22 @@ async def update_contact(
     try:
         updated_contact = service.update_contact(contact_id, contact, updated_by=current_user.id)
         if not updated_contact:
+            error_logger.error(
+                f"PUT /contacts/{contact_id} | 404 Not Found | contact_id={contact_id}"
+            )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        # Log the 400 error with full details
+        error_logger.error(
+            f"PUT /contacts/{contact_id} | 400 Error | "
+            f"contact_id={contact_id} | update_data={contact.model_dump(exclude_unset=True)} | "
+            f"error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 # Tag management endpoints
 @router.post("/{contact_id}/tags/add", response_model=Contact)
@@ -225,10 +337,21 @@ async def add_tags_to_contact(
     try:
         updated_contact = service.add_tags_to_contact(contact_id, tag_request.tags)
         if not updated_contact:
+            error_logger.error(
+                f"POST /contacts/{contact_id}/tags/add | 404 Not Found | "
+                f"contact_id={contact_id} | tags={tag_request.tags}"
+            )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"POST /contacts/{contact_id}/tags/add | 400 Error | "
+            f"contact_id={contact_id} | tags={tag_request.tags} | error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @router.post("/{contact_id}/tags/remove", response_model=Contact)
 async def remove_tags_from_contact(
@@ -242,10 +365,21 @@ async def remove_tags_from_contact(
     try:
         updated_contact = service.remove_tags_from_contact(contact_id, tag_request.tags)
         if not updated_contact:
+            error_logger.error(
+                f"POST /contacts/{contact_id}/tags/remove | 404 Not Found | "
+                f"contact_id={contact_id} | tags={tag_request.tags}"
+            )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"POST /contacts/{contact_id}/tags/remove | 400 Error | "
+            f"contact_id={contact_id} | tags={tag_request.tags} | error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @router.put("/{contact_id}/tags", response_model=Contact)
 async def set_contact_tags(
@@ -259,10 +393,21 @@ async def set_contact_tags(
     try:
         updated_contact = service.set_contact_tags(contact_id, tag_request.tags)
         if not updated_contact:
+            error_logger.error(
+                f"PUT /contacts/{contact_id}/tags | 404 Not Found | "
+                f"contact_id={contact_id} | tags={tag_request.tags}"
+            )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"PUT /contacts/{contact_id}/tags | 400 Error | "
+            f"contact_id={contact_id} | tags={tag_request.tags} | error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @router.get("/{contact_id}/tags", response_model=List[str])
 async def get_contact_tags(
@@ -307,7 +452,12 @@ async def bulk_add_tags(
         result = service.bulk_add_tags(bulk_request.contact_ids, bulk_request.tags)
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"POST /contacts/tags/bulk-add | 400 Error | "
+            f"contact_ids={bulk_request.contact_ids} | tags={bulk_request.tags} | error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @router.post("/tags/bulk-remove", response_model=Dict[str, Any])
 async def bulk_remove_tags(
@@ -321,7 +471,12 @@ async def bulk_remove_tags(
         result = service.bulk_remove_tags(bulk_request.contact_ids, bulk_request.tags)
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        error_logger.error(
+            f"POST /contacts/tags/bulk-remove | 400 Error | "
+            f"contact_ids={bulk_request.contact_ids} | tags={bulk_request.tags} | error={error_msg}"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
 # Removed parse_csv_contacts and parse_vcf_contacts as they are not used directly by endpoints
 # and CSV import is deferred. VCF import is handled by service directly.
@@ -335,12 +490,21 @@ async def import_contacts_vcf_file(
 ):
     service = ContactService(db)
     if not file.filename.endswith('.vcf'):
+        error_logger.error(
+            f"POST /contacts/import | 400 Error | "
+            f"filename={file.filename} | error=Only .vcf files are supported"
+        )
         raise HTTPException(status_code=400, detail="Only .vcf files are supported for import.")
     
     vcf_content = (await file.read()).decode('utf-8')
     result = service.import_contacts_from_vcf(vcf_content)
     
     if not result['success']:
+        error_logger.error(
+            f"POST /contacts/import | 400 Error | "
+            f"filename={file.filename} | "
+            f"error={result.get('error', 'VCF import failed')}"
+        )
         raise HTTPException(status_code=400, detail=result.get('error', 'VCF import failed'))
     
     return result
@@ -362,6 +526,10 @@ async def mass_delete_contacts(
             failed_deletions.append(contact_id)
     
     if failed_deletions:
+        error_logger.error(
+            f"DELETE /contacts/mass-delete | 400 Error | "
+            f"total={len(contact_ids)} | deleted={deleted_count} | failed={failed_deletions}"
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Successfully deleted {deleted_count} contacts. Failed to delete contacts with IDs: {failed_deletions}"
@@ -379,6 +547,9 @@ async def delete_contact(
     if service.delete_contact(contact_id):
         return {"message": "Contact deleted successfully"}
     else:
+        error_logger.error(
+            f"DELETE /contacts/{contact_id} | 404 Not Found | contact_id={contact_id}"
+        )
         raise HTTPException(status_code=404, detail="Contact not found")
 
 @router.get("/export/csv")

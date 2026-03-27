@@ -250,10 +250,15 @@ class ContactService:
                 created_count += 1
             except Exception as e:
                 failed_count += 1
+                error_detail = str(e)
                 errors.append({
                     'phone': contact_data.phone,
-                    'error': str(e)
+                    'error': error_detail
                 })
+                # Log validation errors at service level for debugging
+                logger.warning(
+                    f"Contact sync failed for phone={contact_data.phone}: {error_detail}"
+                )
         
         return {
             'success': True,
@@ -347,7 +352,8 @@ class ContactService:
     def get_contacts(
             self, skip: int = 0, limit: int = 500, search: Optional[str] = None, 
             status: Optional[str] = None, tags: Optional[List[str]] = None,
-            created_after: Optional[datetime] = None, updated_after: Optional[datetime] = None) -> List[Contact]:
+            created_after: Optional[datetime] = None, created_before: Optional[datetime] = None,
+            updated_after: Optional[datetime] = None, updated_before: Optional[datetime] = None) -> List[Contact]:
         """Get all contacts with pagination and optional filtering/searching"""
         query = self.db.query(Contact)
         
@@ -361,13 +367,17 @@ class ContactService:
         if status:
             query = query.filter(Contact.status == status)
         
-        # Filter by created_after
+        # Filter by created date range
         if created_after:
             query = query.filter(Contact.created_at >= created_after)
+        if created_before:
+            query = query.filter(Contact.created_at <= created_before)
         
-        # Filter by updated_after
+        # Filter by updated date range
         if updated_after:
             query = query.filter(Contact.updated_at >= updated_after)
+        if updated_before:
+            query = query.filter(Contact.updated_at <= updated_before)
         
         contacts = query.offset(skip).limit(limit).all()
         
@@ -382,6 +392,57 @@ class ContactService:
             return filtered_contacts
             
         return contacts
+    
+    def get_contacts_in_date_range(
+            self, 
+            start_date: datetime, 
+            end_date: datetime, 
+            limit: int = 5000) -> Dict[str, Any]:
+        """
+        Get contacts that were created or modified within a date range.
+        
+        Returns:
+            Dict with:
+            - new_contacts: contacts created within the range
+            - modified_contacts: contacts updated within range (excluding those created in range)
+            - statistics: counts and percentages
+        """
+        # Get contacts created within range
+        new_query = self.db.query(Contact).filter(
+            Contact.created_at >= start_date,
+            Contact.created_at <= end_date
+        ).limit(limit)
+        new_contacts = new_query.all()
+        
+        # Get contacts updated within range
+        modified_query = self.db.query(Contact).filter(
+            Contact.updated_at >= start_date,
+            Contact.updated_at <= end_date
+        ).limit(limit)
+        modified_contacts = modified_query.all()
+        
+        # Get IDs of new contacts to exclude from modified
+        new_contact_ids = {c.id for c in new_contacts}
+        
+        # Filter out new contacts from modified list
+        truly_modified_contacts = [c for c in modified_contacts if c.id not in new_contact_ids]
+        
+        # Build statistics
+        total_new = len(new_contacts)
+        total_modified = len(truly_modified_contacts)
+        total = total_new + total_modified
+        
+        return {
+            'new_contacts': new_contacts,
+            'modified_contacts': truly_modified_contacts,
+            'statistics': {
+                'new_count': total_new,
+                'modified_count': total_modified,
+                'total': total,
+                'new_percentage': round((total_new / total * 100), 1) if total > 0 else 0,
+                'modified_percentage': round((total_modified / total * 100), 1) if total > 0 else 0,
+            }
+        }
     
     def get_contact_by_phone(self, phone: str) -> Contact:
         """Get contact by phone number"""

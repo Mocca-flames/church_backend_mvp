@@ -148,6 +148,8 @@ update_contacts.py
 test_contact.py
 get_new_or_modified_contacts.py
 export_contacts.py
+backup.json
+import_contacts.py
 
 # Documentation with sensitive info
 endpoints.md
@@ -163,3 +165,8 @@ bridge.py
 # SMS service files with credentials
 bulksms.py
 clicktel.py
+
+# Backup DATA
+contacts_export_20260326_013920.json
+
+
