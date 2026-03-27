@@ -26,9 +26,9 @@ error_logger.setLevel(logging.ERROR)
 error_file_handler = logging.FileHandler(os.path.join(logs_dir, 'contact_400_errors.log'))
 error_file_handler.setLevel(logging.ERROR)
 
-# Detailed formatter including request/response data
+# Detailed formatter - simple Request/Response format
 detailed_formatter = logging.Formatter(
-    '%(asctime)s | %(levelname)s | %(message)s',
+    '%(asctime)s | %(levelname)s | Request: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 error_file_handler.setFormatter(detailed_formatter)
@@ -125,9 +125,7 @@ async def create_contact(
         error_msg = str(e)
         # Log the 400 error with full details
         error_logger.error(
-            f"POST /contacts | 400 Validation Error | "
-            f"phone={contact.phone} | name={contact.name} | "
-            f"error={error_msg}"
+            f"POST /contacts | Status: 400 | Request: {str(contact.model_dump())} | Response: {error_msg}"
         )
         raise HTTPException(
             status_code=400, 
@@ -140,9 +138,7 @@ async def create_contact(
     except Exception as e:
         error_msg = str(e)
         error_logger.error(
-            f"POST /contacts | 400 Error | "
-            f"phone={contact.phone} | name={contact.name} | "
-            f"error={error_msg}"
+            f"POST /contacts | Status: 400 | Request: {str(contact.model_dump())} | Response: {error_msg}"
         )
         raise HTTPException(status_code=400, detail=error_msg)
 
@@ -186,9 +182,7 @@ async def add_contacts_from_list(
         result['message'] = f"Imported {imported_count} contacts, skipped {skipped_count} due to errors or duplicates."
         # Log the import errors
         error_logger.error(
-            f"POST /contacts/add-list | Partial Failure | "
-            f"total={len(contact_import.contacts)} | imported={imported_count} | skipped={skipped_count} | "
-            f"error_details={errors}"
+            f"POST /contacts/add-list | Status: 400 | Request: total={len(contact_import.contacts)} contacts | Response: imported={imported_count}, skipped={skipped_count}, errors={errors}"
         )
     else:
         result['message'] = f"Successfully imported {imported_count} contacts. Skipped {skipped_count} duplicates."
@@ -231,17 +225,13 @@ async def sync_contacts(
         # Log if there were any failures
         if result.get('failed_count', 0) > 0:
             error_logger.error(
-                f"POST /contacts/sync | Partial Failure | "
-                f"synced={result.get('synced_count', 0)} | failed={result.get('failed_count', 0)} | "
-                f"errors={result.get('errors', [])}"
+                f"POST /contacts/sync | Status: 400 | Request: {len(contact_import.contacts)} contacts | Response: synced={result.get('synced_count', 0)}, failed={result.get('failed_count', 0)}, errors={result.get('errors', [])}"
             )
         return result
     except Exception as e:
         error_msg = str(e)
         error_logger.error(
-            f"POST /contacts/sync | 400 Error | "
-            f"contact_count={len(contact_import.contacts)} | "
-            f"error={error_msg}"
+            f"POST /contacts/sync | Status: 400 | Request: {len(contact_import.contacts)} contacts | Response: {error_msg}"
         )
         raise HTTPException(status_code=400, detail=error_msg)
 
@@ -284,9 +274,7 @@ async def mass_update_contacts(
     if errors:
         # Log the mass-update errors
         error_logger.error(
-            f"PUT /contacts/mass-update | Partial Failure | "
-            f"total={len(contacts)} | updated={len(updated_contacts)} | errors={len(errors)} | "
-            f"error_details={errors}"
+            f"PUT /contacts/mass-update | Status: 400 | Request: {len(contacts)} contacts | Response: updated={len(updated_contacts)}, errors={len(errors)}, error_details={errors}"
         )
         return {
             "success": False,
@@ -308,7 +296,7 @@ async def update_contact(
         updated_contact = service.update_contact(contact_id, contact, updated_by=current_user.id)
         if not updated_contact:
             error_logger.error(
-                f"PUT /contacts/{contact_id} | 404 Not Found | contact_id={contact_id}"
+                f"PUT /contacts/{contact_id} | Status: 404 | Request: contact_id={contact_id}, data={str(contact.model_dump(exclude_unset=True))} | Response: Contact not found"
             )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
@@ -318,9 +306,7 @@ async def update_contact(
         error_msg = str(e)
         # Log the 400 error with full details
         error_logger.error(
-            f"PUT /contacts/{contact_id} | 400 Error | "
-            f"contact_id={contact_id} | update_data={contact.model_dump(exclude_unset=True)} | "
-            f"error={error_msg}"
+            f"PUT /contacts/{contact_id} | Status: 400 | Request: contact_id={contact_id}, data={str(contact.model_dump(exclude_unset=True))} | Response: {error_msg}"
         )
         raise HTTPException(status_code=400, detail=error_msg)
 
@@ -338,8 +324,7 @@ async def add_tags_to_contact(
         updated_contact = service.add_tags_to_contact(contact_id, tag_request.tags)
         if not updated_contact:
             error_logger.error(
-                f"POST /contacts/{contact_id}/tags/add | 404 Not Found | "
-                f"contact_id={contact_id} | tags={tag_request.tags}"
+                f"POST /contacts/{contact_id}/tags/add | Status: 404 | Request: contact_id={contact_id}, tags={tag_request.tags} | Response: Contact not found"
             )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
@@ -348,8 +333,7 @@ async def add_tags_to_contact(
     except Exception as e:
         error_msg = str(e)
         error_logger.error(
-            f"POST /contacts/{contact_id}/tags/add | 400 Error | "
-            f"contact_id={contact_id} | tags={tag_request.tags} | error={error_msg}"
+            f"POST /contacts/{contact_id}/tags/add | Status: 400 | Request: contact_id={contact_id}, tags={tag_request.tags} | Response: {error_msg}"
         )
         raise HTTPException(status_code=400, detail=error_msg)
 
@@ -366,8 +350,7 @@ async def remove_tags_from_contact(
         updated_contact = service.remove_tags_from_contact(contact_id, tag_request.tags)
         if not updated_contact:
             error_logger.error(
-                f"POST /contacts/{contact_id}/tags/remove | 404 Not Found | "
-                f"contact_id={contact_id} | tags={tag_request.tags}"
+                f"POST /contacts/{contact_id}/tags/remove | Status: 404 | Request: contact_id={contact_id}, tags={tag_request.tags} | Response: Contact not found"
             )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
@@ -376,8 +359,7 @@ async def remove_tags_from_contact(
     except Exception as e:
         error_msg = str(e)
         error_logger.error(
-            f"POST /contacts/{contact_id}/tags/remove | 400 Error | "
-            f"contact_id={contact_id} | tags={tag_request.tags} | error={error_msg}"
+            f"POST /contacts/{contact_id}/tags/remove | Status: 400 | Request: contact_id={contact_id}, tags={tag_request.tags} | Response: {error_msg}"
         )
         raise HTTPException(status_code=400, detail=error_msg)
 
@@ -394,8 +376,7 @@ async def set_contact_tags(
         updated_contact = service.set_contact_tags(contact_id, tag_request.tags)
         if not updated_contact:
             error_logger.error(
-                f"PUT /contacts/{contact_id}/tags | 404 Not Found | "
-                f"contact_id={contact_id} | tags={tag_request.tags}"
+                f"PUT /contacts/{contact_id}/tags | Status: 404 | Request: contact_id={contact_id}, tags={tag_request.tags} | Response: Contact not found"
             )
             raise HTTPException(status_code=404, detail="Contact not found")
         return updated_contact
@@ -404,8 +385,7 @@ async def set_contact_tags(
     except Exception as e:
         error_msg = str(e)
         error_logger.error(
-            f"PUT /contacts/{contact_id}/tags | 400 Error | "
-            f"contact_id={contact_id} | tags={tag_request.tags} | error={error_msg}"
+            f"PUT /contacts/{contact_id}/tags | Status: 400 | Request: contact_id={contact_id}, tags={tag_request.tags} | Response: {error_msg}"
         )
         raise HTTPException(status_code=400, detail=error_msg)
 
@@ -491,8 +471,7 @@ async def import_contacts_vcf_file(
     service = ContactService(db)
     if not file.filename.endswith('.vcf'):
         error_logger.error(
-            f"POST /contacts/import | 400 Error | "
-            f"filename={file.filename} | error=Only .vcf files are supported"
+            f"POST /contacts/import | Status: 400 | Request: filename={file.filename} | Response: Only .vcf files are supported"
         )
         raise HTTPException(status_code=400, detail="Only .vcf files are supported for import.")
     
@@ -501,9 +480,7 @@ async def import_contacts_vcf_file(
     
     if not result['success']:
         error_logger.error(
-            f"POST /contacts/import | 400 Error | "
-            f"filename={file.filename} | "
-            f"error={result.get('error', 'VCF import failed')}"
+            f"POST /contacts/import | Status: 400 | Request: filename={file.filename} | Response: {result.get('error', 'VCF import failed')}"
         )
         raise HTTPException(status_code=400, detail=result.get('error', 'VCF import failed'))
     
@@ -527,8 +504,7 @@ async def mass_delete_contacts(
     
     if failed_deletions:
         error_logger.error(
-            f"DELETE /contacts/mass-delete | 400 Error | "
-            f"total={len(contact_ids)} | deleted={deleted_count} | failed={failed_deletions}"
+            f"DELETE /contacts/mass-delete | Status: 400 | Request: contact_ids={contact_ids} | Response: deleted={deleted_count}, failed={failed_deletions}"
         )
         raise HTTPException(
             status_code=400,
@@ -548,7 +524,7 @@ async def delete_contact(
         return {"message": "Contact deleted successfully"}
     else:
         error_logger.error(
-            f"DELETE /contacts/{contact_id} | 404 Not Found | contact_id={contact_id}"
+            f"DELETE /contacts/{contact_id} | Status: 404 | Request: contact_id={contact_id} | Response: Contact not found"
         )
         raise HTTPException(status_code=404, detail="Contact not found")
 
