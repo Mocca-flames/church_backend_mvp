@@ -798,3 +798,124 @@ class ContactService:
                 'success': False,
                 'error': f"VCF parsing error: {str(e)}"
             }
+
+    def get_dashboard_statistics(
+        self,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Get dashboard statistics including tag categories and new/modified contact counts.
+        
+        Args:
+            date_from: Start date for filtering new/modified contacts (optional)
+            date_to: End date for filtering new/modified contacts (optional)
+            
+        Returns:
+            Dict containing total_contacts, locations, roles, membership, new_contacts, modified_contacts
+            
+        Note: If no date parameters provided, new_contacts and modified_contacts return all-time counts.
+        """
+        from datetime import timedelta
+        
+        # Determine if date filtering is requested
+        has_date_filter = date_from is not None or date_to is not None
+        
+        # If no dates provided, use all-time (no filter on new/modified counts)
+        if not date_to:
+            date_to = datetime.utcnow()
+        if not date_from:
+            date_from = datetime(1970, 1, 1)  # Beginning of time for all-time counts
+        
+        # Get all contacts for tag analysis
+        all_contacts = self.db.query(Contact).all()
+        total_contacts = len(all_contacts)
+        
+        # Fixed role tags
+        ROLE_TAGS = {'pastor', 'protocol', 'worshiper', 'usher', 'financier', 'servant'}
+        
+        # Fixed location tags (hardcoded)
+        LOCATION_TAGS = {'kanana', 'majaneng', 'mashemong', 'soshanguve', 'kekana'}
+        
+        # Initialize counters
+        location_counts = {}
+        role_counts = {}
+        member_count = 0
+        non_member_count = 0
+        
+        # Process each contact
+        for contact in all_contacts:
+            contact_tags = self._get_contact_tags(contact)
+            
+            # Check membership
+            if 'member' in contact_tags:
+                member_count += 1
+            else:
+                non_member_count += 1
+            
+            # Categorize other tags
+            for tag in contact_tags:
+                # Skip 'member' tag - it's handled above
+                if tag == 'member':
+                    continue
+                    
+                # Check if it's a fixed role tag
+                if tag in ROLE_TAGS:
+                    role_counts[tag] = role_counts.get(tag, 0) + 1
+                # Check if it's a hardcoded location tag
+                elif tag in LOCATION_TAGS:
+                    location_counts[tag] = location_counts.get(tag, 0) + 1
+                else:
+                    # Dynamic location tag (anything else that's not a role)
+                    location_counts[tag] = location_counts.get(tag, 0) + 1
+        
+        # Count new contacts (created within date range)
+        new_contacts_count = self.db.query(Contact).filter(
+            Contact.created_at >= date_from,
+            Contact.created_at <= date_to
+        ).count()
+        
+        # Count modified contacts (updated within date range, but NOT created within range)
+        modified_contacts_count = self.db.query(Contact).filter(
+            Contact.updated_at >= date_from,
+            Contact.updated_at <= date_to,
+            Contact.created_at < date_from  # Exclude contacts created in the same period
+        ).count()
+        
+        # Format response based on whether date filtering was requested
+        if has_date_filter:
+            # Specific date range requested
+            new_contacts_response = {
+                'count': new_contacts_count,
+                'date_from': date_from.strftime('%Y-%m-%d'),
+                'date_to': date_to.strftime('%Y-%m-%d')
+            }
+            modified_contacts_response = {
+                'count': modified_contacts_count,
+                'date_from': date_from.strftime('%Y-%m-%d'),
+                'date_to': date_to.strftime('%Y-%m-%d')
+            }
+        else:
+            # No date filtering - return all-time counts
+            new_contacts_response = {
+                'count': new_contacts_count,
+                'date_from': None,
+                'date_to': None
+            }
+            modified_contacts_response = {
+                'count': modified_contacts_count,
+                'date_from': None,
+                'date_to': None
+            }
+        
+        return {
+            'total_contacts': total_contacts,
+            'new_contacts': new_contacts_response,
+            'modified_contacts': modified_contacts_response,
+            'locations': dict(sorted(location_counts.items())),
+            'roles': dict(sorted(role_counts.items())),
+            'membership': {
+                'member': member_count,
+                'non_member': non_member_count
+            }
+        }

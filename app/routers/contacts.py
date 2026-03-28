@@ -420,6 +420,31 @@ async def get_tag_statistics(
     service = ContactService(db)
     return service.get_tag_statistics()
 
+@router.get("/dashboard/statistics")
+async def get_dashboard_statistics(
+    date_from: Optional[datetime] = Query(None, description="Start date for filtering (ISO 8601 format)"),
+    date_to: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601 format)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """
+    Get dashboard statistics including categorized tag counts and new/modified contact counts.
+    
+    Returns:
+    - total_contacts: Total number of contacts in the database
+    - new_contacts: Count of contacts created within the date range
+    - modified_contacts: Count of contacts updated within the date range (excluding new)
+    - locations: Tag counts for location tags (kanana, majaneng, mashemong, etc.)
+    - roles: Tag counts for role tags (pastor, protocol, worshiper, usher, financier, servant)
+    - membership: member vs non_member counts
+    
+    Query Parameters:
+    - date_from: Start date (optional, defaults to 30 days ago)
+    - date_to: End date (optional, defaults to now)
+    """
+    service = ContactService(db)
+    return service.get_dashboard_statistics(date_from=date_from, date_to=date_to)
+
 @router.post("/tags/bulk-add", response_model=Dict[str, Any])
 async def bulk_add_tags(
     bulk_request: BulkTagRequest,
