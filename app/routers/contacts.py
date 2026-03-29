@@ -445,6 +445,44 @@ async def get_dashboard_statistics(
     service = ContactService(db)
     return service.get_dashboard_statistics(date_from=date_from, date_to=date_to)
 
+@router.delete("/locations/{location_tag}")
+async def delete_location_tag(
+    location_tag: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_contact_manager)
+):
+    """
+    Delete a dynamic location tag from all contacts.
+    
+    This endpoint removes a location tag from all contacts that have it and returns the result.
+    
+    Args:
+        location_tag: The location tag to delete (e.g., "unit7", "unit_7")
+        
+    Returns:
+    - success: Whether the operation was successful
+    - deleted_location: The location tag that was deleted
+    - contacts_updated: Number of contacts updated
+    - message: Human-readable message
+    
+    Note: Cannot delete hardcoded location tags (kanana, majaneng, mashemong, soshanguve, kekana)
+    """
+    service = ContactService(db)
+    try:
+        result = service.delete_location_tag(location_tag)
+        return result
+    except ValueError as e:
+        error_logger.error(
+            f"DELETE /contacts/locations/{location_tag} | Status: 400 | Response: {str(e)}"
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        error_msg = str(e)
+        error_logger.error(
+            f"DELETE /contacts/locations/{location_tag} | Status: 500 | Response: {error_msg}"
+        )
+        raise HTTPException(status_code=500, detail=error_msg)
+
 @router.post("/tags/bulk-add", response_model=Dict[str, Any])
 async def bulk_add_tags(
     bulk_request: BulkTagRequest,

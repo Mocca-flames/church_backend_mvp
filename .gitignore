@@ -150,6 +150,8 @@ get_new_or_modified_contacts.py
 export_contacts.py
 backup.json
 import_contacts.py
+test_dashboard.py
+tags.json
 
 # Documentation with sensitive info
 endpoints.md

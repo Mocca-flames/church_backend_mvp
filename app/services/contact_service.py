@@ -919,3 +919,62 @@ class ContactService:
                 'non_member': non_member_count
             }
         }
+
+    def delete_location_tag(self, location_tag: str) -> Dict[str, Any]:
+        """
+        Delete a dynamic location tag from all contacts.
+        
+        Args:
+            location_tag: The location tag to remove from all contacts
+            
+        Returns:
+            Dict containing success status, contacts updated, and updated statistics
+            
+        Note: Cannot delete hardcoded location tags (kanana, majaneng, mashemong, soshanguve, kekana)
+        """
+        # Hardcoded location tags that cannot be deleted
+        HARDCODE_LOCATIONS = {'kanana', 'majaneng', 'mashemong', 'soshanguve', 'kekana'}
+        
+        # Check if trying to delete a hardcoded location
+        if location_tag.lower() in HARDCODE_LOCATIONS:
+            raise ValueError(
+                f"Cannot delete hardcoded location '{location_tag}'. "
+                f"Allowed hardcoded locations: {', '.join(sorted(HARDCODE_LOCATIONS))}"
+            )
+        
+        # Find all contacts that have this location tag
+        all_contacts = self.db.query(Contact).all()
+        contacts_to_update = []
+        
+        for contact in all_contacts:
+            contact_tags = self._get_contact_tags(contact)
+            if location_tag in contact_tags:
+                contacts_to_update.append(contact)
+        
+        # Remove the tag from each contact
+        updated_count = 0
+        for contact in contacts_to_update:
+            try:
+                current_tags = self._get_contact_tags(contact)
+                updated_tags = [tag for tag in current_tags if tag != location_tag]
+                self._set_contact_tags(contact, updated_tags)
+                self.db.add(contact)
+                updated_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to update contact {contact.id}: {str(e)}")
+        
+        # Commit all changes
+        if updated_count > 0:
+            try:
+                self.db.commit()
+            except Exception as e:
+                self.db.rollback()
+                raise ValueError(f"Failed to commit changes: {str(e)}")
+        
+        # Return success response with updated statistics
+        return {
+            'success': True,
+            'deleted_location': location_tag,
+            'contacts_updated': updated_count,
+            'message': f"Successfully removed location '{location_tag}' from {updated_count} contacts"
+        }
