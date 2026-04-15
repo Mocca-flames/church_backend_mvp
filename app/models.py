@@ -101,6 +101,15 @@ class Attendance(Base):
     contact = relationship("Contact")
     recorder = relationship("User", back_populates="attendance_records")
 
+    __table_args__ = (
+        UniqueConstraint(
+            "contact_id",
+            "service_type",
+            "service_date",
+            name="unique_attendance_per_contact_service_date",
+        ),
+    )
+
 
 class Scenario(Base):
     __tablename__ = "scenarios"
