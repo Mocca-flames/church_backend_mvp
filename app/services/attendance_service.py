@@ -21,27 +21,42 @@ class AttendanceService:
         This handles the case where mobile apps send local contact IDs that don't
         match the server's auto-generated IDs.
         """
-        # First try to find contact by phone
-        contact = self.db.query(Contact).filter(Contact.phone == phone).first()
+        # Normalize phone into a canonical form for comparison/storage
+        def normalize(p: str) -> str:
+            if not p:
+                return ""
+            digits = re.sub(r"\D", "", p)
+            # South African numbers (local 0XXXXXXXXX or +27XXXXXXXXX or 27XXXXXXXXX)
+            if len(digits) == 10 and digits.startswith("0"):
+                return "+27" + digits[1:]
+            if len(digits) == 11 and digits.startswith("27"):
+                return "+" + digits
+            if len(digits) == 9 and digits[0] in ["6", "7", "8", "9"]:
+                return "+27" + digits
+            # Fallback to digits-only
+            return digits
+
+        normalized = normalize(phone)
+
+        # Try several likely stored variants to find an existing contact
+        candidates = {phone, normalized}
+        # also include digits-only form
+        digits_only = re.sub(r"\D", "", phone or "")
+        if digits_only:
+            candidates.add(digits_only)
+
+        contact = (
+            self.db.query(Contact)
+            .filter(Contact.phone.in_(list(candidates)))
+            .first()
+        )
 
         if contact:
             return contact
 
-        # If not found, create a new contact
-        # Clean and validate phone number first
+        # Create a new contact using the normalized phone
         try:
-            # Clean phone number
-            digits_only = re.sub(r"\D", "", phone)
-            if phone.startswith("0") and len(digits_only) == 10:
-                cleaned_phone = "+27" + digits_only[1:]
-            elif phone.startswith("27") and len(digits_only) == 11:
-                cleaned_phone = "+" + digits_only
-            elif phone.startswith("+27") and len(digits_only) == 11:
-                cleaned_phone = phone
-            else:
-                cleaned_phone = phone  # Keep original if format is unknown
-
-            contact = Contact(name=cleaned_phone, phone=cleaned_phone, status="active")
+            contact = Contact(name=normalized, phone=normalized, status="active")
             self.db.add(contact)
             self.db.commit()
             self.db.refresh(contact)

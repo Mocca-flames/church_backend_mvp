@@ -212,10 +212,22 @@ def generate_attendance_pdf(
 
     logger = logging.getLogger(__name__)
 
-    # ── Collect row data ──────────────────────────────────────────────────────
+    # ── Collect row data (deduplicate by contact id or phone) ────────────────
     data = []
+    seen = set()
     for att in attendances:
         contact = att.contact
+        # Prefer dedupe by contact id when available, else by normalized phone
+        contact_key = getattr(contact, "id", None)
+        if not contact_key:
+            contact_key = format_phone_for_display(contact.phone) or None
+
+        # Skip duplicates (preserve first occurrence)
+        if contact_key in seen:
+            logger.debug(f"[PDF] skipping duplicate contact key={contact_key}")
+            continue
+        seen.add(contact_key)
+
         tags = get_contact_tags(contact)
         location = extract_location_from_tags(tags)
         member = "Yes" if is_member(tags) else "No"
