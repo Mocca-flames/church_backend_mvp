@@ -90,7 +90,7 @@ def format_phone_for_display(phone: str) -> str:
         phone = phone[2:]
 
     # Ensure mobile numbers have leading 0
-    if len(phone) == 9 and phone[0] in ["7", "8", "9"]:
+    if len(phone) == 9 and phone[0] in ["6", "7", "8", "9"]:
         phone = "0" + phone
     # Note: For len==10 starting with 7,8,9, assume it's invalid or different format, don't add 0
 
