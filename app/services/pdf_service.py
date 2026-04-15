@@ -10,47 +10,68 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer,
+    HRFlowable,
+    Image,
+)
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 
 # ── Brand Palette ────────────────────────────────────────────────────────────
-NAVY        = colors.HexColor('#1A2B4A')   # deep navy  – headers / accents
-GOLD        = colors.HexColor('#C9A84C')   # warm gold  – accent stripe
-LIGHT_BLUE  = colors.HexColor('#EAF0F8')   # pale blue  – alternating row
-WHITE       = colors.white
-GREY_TEXT   = colors.HexColor('#4A4A4A')
-BORDER      = colors.HexColor('#C5CDD8')
+NAVY = colors.HexColor("#1A2B4A")  # deep navy  – headers / accents
+GOLD = colors.HexColor("#C9A84C")  # warm gold  – accent stripe
+LIGHT_BLUE = colors.HexColor("#EAF0F8")  # pale blue  – alternating row
+WHITE = colors.white
+GREY_TEXT = colors.HexColor("#4A4A4A")
+BORDER = colors.HexColor("#C5CDD8")
 # ─────────────────────────────────────────────────────────────────────────────
 
 PAGE_W, PAGE_H = A4
-MARGIN = 18 * mm   # breathing room on each side
+MARGIN = 18 * mm  # breathing room on each side
 TABLE_W = PAGE_W - 2 * MARGIN
 
 
 def extract_location_from_tags(tags: List[str]) -> str:
-    valid_locations = {'kanana', 'majaneng', 'mashemong', 'soshanguve', 'kekana'}
+    # Exclude role and membership tags - everything else is a location
+    excluded_tags = {
+        "member",
+        "pastor",
+        "protocol",
+        "worshiper",
+        "usher",
+        "financier",
+        "servant",
+    }
+
     if not tags:
-        return ''
+        return ""
+
     for tag in tags:
-        if tag.lower() in valid_locations:
+        tag_lower = tag.lower()
+        if tag_lower not in excluded_tags:
             return tag.capitalize()
-    return ''
+
+    return ""
 
 
 def is_member(tags: List[str]) -> bool:
     if not tags:
         return False
-    return 'member' in [tag.lower() for tag in tags]
+    return "member" in [tag.lower() for tag in tags]
 
 
 def get_contact_tags(contact) -> List[str]:
-    if hasattr(contact, 'tags') and contact.tags:
+    if hasattr(contact, "tags") and contact.tags:
         return contact.tags
-    if hasattr(contact, 'metadata_') and contact.metadata_:
+    if hasattr(contact, "metadata_") and contact.metadata_:
         try:
             metadata = json.loads(contact.metadata_)
-            return metadata.get('tags', [])
+            return metadata.get("tags", [])
         except (json.JSONDecodeError, TypeError):
             return []
     return []
@@ -58,21 +79,36 @@ def get_contact_tags(contact) -> List[str]:
 
 def format_phone_for_display(phone: str) -> str:
     if not phone:
-        return ''
+        return ""
+
     phone = phone.strip()
-    if phone.startswith('+27'):
+
+    # Remove international prefix if present
+    if phone.startswith("+27"):
         phone = phone[3:]
-    elif phone.startswith('27') and len(phone) > 10:
+    elif phone.startswith("27") and len(phone) > 10:
         phone = phone[2:]
-    if len(phone) == 9 and phone[0] in ['7', '8', '9']:
-        return f"0{phone[:2]} {phone[2:5]} {phone[5:]}"
-    if phone.startswith('0') and len(phone) >= 10:
+
+    # Ensure mobile numbers have leading 0
+    if len(phone) == 9 and phone[0] in ["7", "8", "9"]:
+        phone = "0" + phone
+    # Note: For len==10 starting with 7,8,9, assume it's invalid or different format, don't add 0
+
+    # Format with spaces
+    if phone.startswith("0") and len(phone) == 10:
         return f"{phone[:3]} {phone[3:6]} {phone[6:]}"
+
+    # Return as-is if format doesn't match expected patterns
     return phone
 
 
 # ── Custom canvas for header/footer on every page ────────────────────────────
-def _make_page_decorator(logo_path: str | None, total_records: int, date_str: str = None, service_type_str: str = None):
+def _make_page_decorator(
+    logo_path: str | None,
+    total_records: int,
+    date_str: str = None,
+    service_type_str: str = None,
+):
     """Returns an onFirstPage / onLaterPages callable."""
 
     def draw_page(canvas, doc):
@@ -98,22 +134,29 @@ def _make_page_decorator(logo_path: str | None, total_records: int, date_str: st
                 logo_h = 22 * mm
                 canvas.drawImage(
                     logo_path,
-                    MARGIN, header_bottom + (header_top - header_bottom - logo_h) / 2,
-                    width=logo_w, height=logo_h,
-                    preserveAspectRatio=True, mask='auto'
+                    MARGIN,
+                    header_bottom + (header_top - header_bottom - logo_h) / 2,
+                    width=logo_w,
+                    height=logo_h,
+                    preserveAspectRatio=True,
+                    mask="auto",
                 )
             except Exception:
                 pass  # Logo failed gracefully
 
         # Title text (right side of header)
         canvas.setFillColor(WHITE)
-        canvas.setFont('Helvetica-Bold', 18)
-        canvas.drawRightString(w - MARGIN, header_bottom + 22 * mm, "Fountain of Prayer Ministries Attendance")
+        canvas.setFont("Helvetica-Bold", 18)
+        canvas.drawRightString(
+            w - MARGIN,
+            header_bottom + 22 * mm,
+            "Fountain of Prayer Ministries Attendance",
+        )
 
         # Date and Service Type (below title, on right side)
         canvas.setFillColor(GOLD)
-        canvas.setFont('Helvetica', 10)
-        
+        canvas.setFont("Helvetica", 10)
+
         # Build the header info string
         if date_str and service_type_str:
             header_info = f"{date_str} | {service_type_str}"
@@ -123,8 +166,8 @@ def _make_page_decorator(logo_path: str | None, total_records: int, date_str: st
             header_info = service_type_str
         else:
             # Default: current date
-            header_info = datetime.now().strftime('%d %B %Y')
-        
+            header_info = datetime.now().strftime("%d %B %Y")
+
         canvas.drawRightString(w - MARGIN, header_bottom + 14 * mm, header_info)
 
         # ── Thin gold rule below header ───────────────────────────────────
@@ -139,12 +182,9 @@ def _make_page_decorator(logo_path: str | None, total_records: int, date_str: st
         canvas.line(MARGIN, footer_y + 5 * mm, w - MARGIN, footer_y + 5 * mm)
 
         canvas.setFillColor(GREY_TEXT)
-        canvas.setFont('Helvetica', 8)
+        canvas.setFont("Helvetica", 8)
         canvas.drawString(MARGIN, footer_y, f"Total Records: {total_records}")
-        canvas.drawRightString(
-            w - MARGIN, footer_y,
-            f"Page {doc.page}"
-        )
+        canvas.drawRightString(w - MARGIN, footer_y, f"Page {doc.page}")
 
         canvas.restoreState()
 
@@ -153,9 +193,9 @@ def _make_page_decorator(logo_path: str | None, total_records: int, date_str: st
 
 def generate_attendance_pdf(
     attendances: List[Any],
-    logo_path: str = "assets/logo.png",   # ← point this at your actual logo file
+    logo_path: str = "assets/logo.png",  # ← point this at your actual logo file
     date_str: str = None,
-    service_type_str: str = None
+    service_type_str: str = None,
 ) -> bytes:
     """Generate a polished attendance PDF.
 
@@ -169,25 +209,30 @@ def generate_attendance_pdf(
         PDF bytes.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # ── Collect row data ──────────────────────────────────────────────────────
     data = []
     for att in attendances:
         contact = att.contact
-        tags    = get_contact_tags(contact)
+        tags = get_contact_tags(contact)
         location = extract_location_from_tags(tags)
-        member   = 'Yes' if is_member(tags) else 'No'
-        name     = contact.name if contact.name else contact.phone
-        phone    = format_phone_for_display(contact.phone)
+        member = "Yes" if is_member(tags) else "No"
+        name = contact.name if contact.name else contact.phone
+        phone = format_phone_for_display(contact.phone)
 
-        logger.debug(f"[PDF] name={name} location={location} phone={phone} member={member}")
-        data.append({
-            'name': name,
-            'location': location or 'N/A',
-            'phone': phone,
-            'member': member
-        })
+        logger.debug(
+            f"[PDF] name={name} location={location} phone={phone} member={member}"
+        )
+        data.append(
+            {
+                "name": name,
+                "location": location or "N/A",
+                "phone": phone,
+                "member": member,
+            }
+        )
 
     total = len(data)
 
@@ -200,83 +245,93 @@ def generate_attendance_pdf(
         pagesize=A4,
         leftMargin=MARGIN,
         rightMargin=MARGIN,
-        topMargin=36 * mm,    # clears the painted header
-        bottomMargin=22 * mm, # clears the painted footer
+        topMargin=36 * mm,  # clears the painted header
+        bottomMargin=22 * mm,  # clears the painted footer
     )
 
     page_fn = _make_page_decorator(logo_path, total, date_str, service_type_str)
 
-    styles  = getSampleStyleSheet()
+    styles = getSampleStyleSheet()
 
     # ── Table ─────────────────────────────────────────────────────────────────
     col_widths = [
-        TABLE_W * 0.35,   # Name
-        TABLE_W * 0.22,   # Location
-        TABLE_W * 0.28,   # Phone
-        TABLE_W * 0.15,   # Member
+        TABLE_W * 0.35,  # Name
+        TABLE_W * 0.22,  # Location
+        TABLE_W * 0.28,  # Phone
+        TABLE_W * 0.15,  # Member
     ]
 
     header_para_style = ParagraphStyle(
-        'TH',
-        fontName='Helvetica-Bold',
+        "TH",
+        fontName="Helvetica-Bold",
         fontSize=12,
         textColor=WHITE,
         leading=14,
     )
     cell_style = ParagraphStyle(
-        'TD',
-        fontName='Helvetica',
+        "TD",
+        fontName="Helvetica",
         fontSize=12,
         textColor=GREY_TEXT,
         leading=15,
     )
 
-    headers = ['Name', 'Location', 'Phone', 'Member']
+    headers = ["Name", "Location", "Phone", "Member"]
     table_data = [[Paragraph(h, header_para_style) for h in headers]]
 
     for row in data:
-        table_data.append([
-            Paragraph(row['name'],     cell_style),
-            Paragraph(row['location'], cell_style),
-            Paragraph(row['phone'],    cell_style),
-            Paragraph(row['member'],   cell_style),
-        ])
+        table_data.append(
+            [
+                Paragraph(row["name"], cell_style),
+                Paragraph(row["location"], cell_style),
+                Paragraph(row["phone"], cell_style),
+                Paragraph(row["member"], cell_style),
+            ]
+        )
 
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        # ── Header ────────────────────────────────────────────────────────
-        ('BACKGROUND',    (0, 0), (-1, 0),  NAVY),
-        ('TOPPADDING',    (0, 0), (-1, 0),  10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0),  10),
-        ('LEFTPADDING',   (0, 0), (-1, 0),  10),
-        ('RIGHTPADDING',  (0, 0), (-1, 0),  10),
-
-        # Left border accent on header
-        ('LINEAFTER',     (0, 0), (0, 0),   1.5, GOLD),
-
-        # ── Data rows ─────────────────────────────────────────────────────
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_BLUE]),
-        ('TOPPADDING',    (0, 1), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 9),
-        ('LEFTPADDING',   (0, 1), (-1, -1), 10),
-        ('RIGHTPADDING',  (0, 1), (-1, -1), 10),
-        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
-
-        # ── Grid ──────────────────────────────────────────────────────────
-        ('GRID',          (0, 0), (-1, -1), 0.4, BORDER),
-        ('LINEBELOW',     (0, 0), (-1, 0),  1.5, GOLD),   # gold rule under header
-
-        # ── "Member" column – colour-coded text via per-cell override ─────
-        # (done via Python loop below)
-    ]))
+    tbl.setStyle(
+        TableStyle(
+            [
+                # ── Header ────────────────────────────────────────────────────────
+                ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+                ("TOPPADDING", (0, 0), (-1, 0), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+                ("LEFTPADDING", (0, 0), (-1, 0), 10),
+                ("RIGHTPADDING", (0, 0), (-1, 0), 10),
+                # Left border accent on header
+                ("LINEAFTER", (0, 0), (0, 0), 1.5, GOLD),
+                # ── Data rows ─────────────────────────────────────────────────────
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT_BLUE]),
+                ("TOPPADDING", (0, 1), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 9),
+                ("LEFTPADDING", (0, 1), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 1), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                # ── Grid ──────────────────────────────────────────────────────────
+                ("GRID", (0, 0), (-1, -1), 0.4, BORDER),
+                ("LINEBELOW", (0, 0), (-1, 0), 1.5, GOLD),  # gold rule under header
+                # ── "Member" column – colour-coded text via per-cell override ─────
+                # (done via Python loop below)
+            ]
+        )
+    )
 
     # Colour-code the Member column
     for i, row in enumerate(data, start=1):
-        color = colors.HexColor('#1E7B4B') if row['member'] == 'Yes' else colors.HexColor('#B03A2E')
-        tbl.setStyle(TableStyle([
-            ('TEXTCOLOR', (3, i), (3, i), color),
-            ('FONTNAME',  (3, i), (3, i), 'Helvetica-Bold'),
-        ]))
+        color = (
+            colors.HexColor("#1E7B4B")
+            if row["member"] == "Yes"
+            else colors.HexColor("#B03A2E")
+        )
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("TEXTCOLOR", (3, i), (3, i), color),
+                    ("FONTNAME", (3, i), (3, i), "Helvetica-Bold"),
+                ]
+            )
+        )
 
     elements = [tbl]
 
