@@ -219,7 +219,11 @@ def generate_attendance_pdf(
         tags = get_contact_tags(contact)
         location = extract_location_from_tags(tags)
         member = "Yes" if is_member(tags) else "No"
-        name = contact.name if contact.name else contact.phone
+        name = (
+            format_phone_for_display(contact.name)
+            if contact.name
+            else format_phone_for_display(contact.phone)
+        )
         phone = format_phone_for_display(contact.phone)
 
         logger.debug(

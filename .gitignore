@@ -152,6 +152,7 @@ backup.json
 import_contacts.py
 test_dashboard.py
 tags.json
+test_pdf_download.py
 
 # Documentation with sensitive info
 endpoints.md
