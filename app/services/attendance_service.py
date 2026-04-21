@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models import Attendance, Contact
 from app.schema.attendance import AttendanceCreate
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 import logging
 import re
 
@@ -21,6 +21,7 @@ class AttendanceService:
         This handles the case where mobile apps send local contact IDs that don't
         match the server's auto-generated IDs.
         """
+
         # Normalize phone into a canonical form for comparison/storage
         def normalize(p: str) -> str:
             if not p:
@@ -46,9 +47,7 @@ class AttendanceService:
             candidates.add(digits_only)
 
         contact = (
-            self.db.query(Contact)
-            .filter(Contact.phone.in_(list(candidates)))
-            .first()
+            self.db.query(Contact).filter(Contact.phone.in_(list(candidates))).first()
         )
 
         if contact:
@@ -184,3 +183,70 @@ class AttendanceService:
             self.db.commit()
             return True
         return False
+
+    def delete_attendance_filtered(
+        self,
+        date: Optional[date] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        service_type: Optional[str] = None,
+        contact_id: Optional[int] = None,
+        phone: Optional[str] = None,
+    ) -> int:
+        """
+        Bulk delete attendance records with optional filters.
+        Returns the number of records deleted.
+        """
+        # SAST timezone (UTC+2)
+        SAST_OFFSET = timedelta(hours=2)
+        SAST_TIMEZONE = timezone(SAST_OFFSET)
+
+        def convert_to_sast(dt: Optional[datetime]) -> Optional[datetime]:
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=SAST_TIMEZONE)
+            return dt.astimezone(SAST_TIMEZONE)
+
+        # Build query
+        query = self.db.query(Attendance)
+
+        # Handle date precedence: if 'date' is provided, ignore date_from/date_to
+        if date:
+            # Expand to full-day range in SAST
+            date_from_sast = datetime.combine(date, datetime.min.time()).replace(
+                tzinfo=SAST_TIMEZONE
+            )
+            date_to_sast = datetime.combine(date, datetime.max.time()).replace(
+                tzinfo=SAST_TIMEZONE
+            )
+            query = query.filter(Attendance.service_date >= date_from_sast)
+            query = query.filter(Attendance.service_date <= date_to_sast)
+        else:
+            # Use date_from/date_to if provided
+            date_from_sast = convert_to_sast(date_from)
+            date_to_sast = convert_to_sast(date_to)
+            if date_from_sast:
+                query = query.filter(Attendance.service_date >= date_from_sast)
+            if date_to_sast:
+                query = query.filter(Attendance.service_date <= date_to_sast)
+
+        if service_type:
+            query = query.filter(Attendance.service_type == service_type)
+        if contact_id:
+            query = query.filter(Attendance.contact_id == contact_id)
+        if phone:
+            query = query.filter(Attendance.phone == phone)
+
+        # Execute bulk delete
+        try:
+            deleted_count = query.delete(synchronize_session=False)
+            self.db.commit()
+            logger.info(
+                f"Bulk delete attendance: {deleted_count} records deleted. Filters: date={date}, date_from={date_from}, date_to={date_to}, service_type={service_type}, contact_id={contact_id}, phone={phone}"
+            )
+            return deleted_count
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Bulk delete attendance failed: {e}")
+            raise
